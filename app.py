@@ -1,79 +1,69 @@
 import streamlit as st
-import sqlite3
+from supabase import create_client, Client
 import pandas as pd
 from datetime import datetime
 import os
 import random
 
-# Page Config
-st.set_page_config(
-    page_title="Eco-Pet Care Smart IoT Dashboard",
-    page_icon="🌱",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# SQLite DB Helper
-DB_FILE = "eco_pet_care.db"
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_FILE)
-    return conn
+# Supabase Credentials
+SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co"
+SUPABASE_KEY = "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1"
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    # Create logs table if not exists
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS iot_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            device_name TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            details TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    
-    # Check if empty, seed some initial logs
-    cursor.execute("SELECT COUNT(*) FROM iot_logs")
-    count = cursor.fetchone()[0]
-    if count == 0:
-        seed_data = [
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "시스템 메인", "부팅", "Eco-Pet Care IoT 게이트웨이 구동 완료"),
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "스마트 조명", "상태변경", "조명 자동 제어 활성화 (주변 밝기 감지)"),
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "방석 센서", "측정", "반려견 감지 시작 (착석 감지 모드 활성화)"),
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "방석 센서", "상태변경", "반려견 방석 안착 감지 (상태: 안착함)"),
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "에너지 매니저", "전력차단", "반려견 수면 상태 진입 감지 -> 거실 TV 대기전력 차단"),
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "스마트 조명", "밝기조절", "반려견 수면 유도를 위한 스마트 조명 조도 감소 (10% 조광)"),
-        ]
-        cursor.executemany("INSERT INTO iot_logs (timestamp, device_name, event_type, details) VALUES (?, ?, ?, ?)", seed_data)
-        conn.commit()
-    conn.close()
+    try:
+        # Check row count
+        response = supabase.table("iot_logs").select("id", count="exact").limit(1).execute()
+        if response.count == 0:
+            seed_data = [
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "시스템 메인", "event_type": "부팅", "details": "Eco-Pet Care IoT 게이트웨이 구동 완료"},
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "상태변경", "details": "조명 자동 제어 활성화 (주변 밝기 감지)"},
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "측정", "details": "반려견 감지 시작 (착석 감지 모드 활성화)"},
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "상태변경", "details": "반려견 방석 안착 감지 (상태: 안착함)"},
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "에너지 매니저", "event_type": "전력차단", "details": "반려견 수면 상태 진입 감지 -> 거실 TV 대기전력 차단"},
+                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "밝기조절", "details": "반려견 수면 유도를 위한 스마트 조명 조도 감소 (10% 조광)"},
+            ]
+            supabase.table("iot_logs").insert(seed_data).execute()
+    except Exception as e:
+        st.error(f"데이터베이스 연결 오류: {e}")
 
 def add_log(device_name, event_type, details):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO iot_logs (timestamp, device_name, event_type, details) VALUES (?, ?, ?, ?)",
-        (now, device_name, event_type, details)
-    )
-    conn.commit()
-    conn.close()
+    try:
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        supabase.table("iot_logs").insert({
+            "timestamp": now,
+            "device_name": device_name,
+            "event_type": event_type,
+            "details": details
+        }).execute()
+    except Exception as e:
+        st.error(f"로그 추가 오류: {e}")
 
 def get_logs():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT timestamp as '기록 시간', device_name as '장치명', event_type as '이벤트', details as '세부 로그' FROM iot_logs ORDER BY id DESC", conn)
-    conn.close()
-    return df
+    try:
+        response = supabase.table("iot_logs").select("timestamp, device_name, event_type, details").order("id", desc=True).limit(100).execute()
+        if response.data:
+            df = pd.DataFrame(response.data)
+            df = df.rename(columns={
+                "timestamp": "기록 시간",
+                "device_name": "장치명",
+                "event_type": "이벤트",
+                "details": "세부 로그"
+            })
+            df = df[["기록 시간", "장치명", "이벤트", "세부 로그"]]
+            return df
+        else:
+            return pd.DataFrame(columns=["기록 시간", "장치명", "이벤트", "세부 로그"])
+    except Exception as e:
+        st.error(f"로그 조회 오류: {e}")
+        return pd.DataFrame(columns=["기록 시간", "장치명", "이벤트", "세부 로그"])
 
 def clear_all_logs():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM iot_logs")
-    conn.commit()
-    conn.close()
+    try:
+        supabase.table("iot_logs").delete().gt("id", 0).execute()
+    except Exception as e:
+        st.error(f"로그 초기화 오류: {e}")
+
 
 def get_power_data():
     times = []
