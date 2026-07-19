@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import random
 import os
 
@@ -21,6 +21,9 @@ SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co"
 SUPABASE_KEY = "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Define Korean Standard Time (KST = UTC+9)
+KST = timezone(timedelta(hours=9))
+
 class LogRequest(BaseModel):
     device_name: str
     event_type: str
@@ -37,7 +40,7 @@ def get_logs():
 @app.post("/api/logs")
 def add_log(req: LogRequest):
     try:
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
         response = supabase.table("iot_logs").insert({
             "timestamp": now,
             "device_name": req.device_name,
@@ -54,7 +57,7 @@ def clear_logs():
         # Delete all logs in Supabase
         supabase.table("iot_logs").delete().gt("id", 0).execute()
         # Seed default initialization log
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
         supabase.table("iot_logs").insert({
             "timestamp": now,
             "device_name": "시스템 메인",
@@ -76,7 +79,7 @@ def simulate_log():
             ("스마트 사료기", "급식완료", "반려견 취침 전 스마트 저녁 급식 배급 완료 (80g)"),
         ]
         event = random.choice(telemetry_events)
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
         response = supabase.table("iot_logs").insert({
             "timestamp": now,
             "device_name": event[0],
@@ -94,12 +97,12 @@ def init_db():
         response = supabase.table("iot_logs").select("id", count="exact").limit(1).execute()
         if response.count == 0:
             seed_data = [
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "시스템 메인", "event_type": "부팅", "details": "Eco-Pet Care IoT 게이트웨이 구동 완료"},
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "상태변경", "details": "조명 자동 제어 활성화 (주변 밝기 감지)"},
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "측정", "details": "반려견 감지 시작 (착석 감지 모드 활성화)"},
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "상태변경", "details": "반려견 방석 안착 감지 (상태: 안착함)"},
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "에너지 매니저", "event_type": "전력차단", "details": "반려견 수면 상태 진입 감지 -> 거실 TV 대기전력 차단"},
-                {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "밝기조절", "details": "반려견 수면 유도를 위한 스마트 조명 조도 감소 (10% 조광)"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "시스템 메인", "event_type": "부팅", "details": "Eco-Pet Care IoT 게이트웨이 구동 완료"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "상태변경", "details": "조명 자동 제어 활성화 (주변 밝기 감지)"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "측정", "details": "반려견 감지 시작 (착석 감지 모드 활성화)"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "방석 센서", "event_type": "상태변경", "details": "반려견 방석 안착 감지 (상태: 안착함)"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "에너지 매니저", "event_type": "전력차단", "details": "반려견 수면 상태 진입 감지 -> 거실 TV 대기전력 차단"},
+                {"timestamp": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "device_name": "스마트 조명", "event_type": "밝기조절", "details": "반려견 수면 유도를 위한 스마트 조명 조도 감소 (10% 조광)"},
             ]
             supabase.table("iot_logs").insert(seed_data).execute()
             return {"status": "seeded"}
