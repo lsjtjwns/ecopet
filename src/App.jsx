@@ -424,7 +424,7 @@ export default function App() {
         <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1.5rem' }}>🎛️ 수동 장치 제어 (Manual Override)</h3>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: window.innerWidth > 992 ? '1fr 1fr 1fr 1.2fr' : '1fr',
+          gridTemplateColumns: window.innerWidth > 768 ? '1fr 1fr 1fr' : '1fr',
           gap: '1rem'
         }}>
           <button 
@@ -462,27 +462,6 @@ export default function App() {
           >
             ⛺ 블라인드 {blindState ? '내리기 (현재 올림)' : '올리기 (현재 내림)'}
           </button>
-
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button 
-              className="btn btn-secondary" 
-              style={{ flex: 1, justifyContent: 'center' }}
-              onClick={handleSimulate}
-            >
-              ⚡ 가상 로그 생성
-            </button>
-            <button 
-              className="btn" 
-              style={{ 
-                borderColor: petPresent ? '#10b981' : 'rgba(255,255,255,0.08)',
-                color: petPresent ? '#10b981' : '#fbd604',
-                padding: '0.75rem' 
-              }}
-              onClick={() => setPetPresent(!petPresent)}
-            >
-              🐾 {petPresent ? "부재 중" : "안착함"}
-            </button>
-          </div>
         </div>
       </div>
 
