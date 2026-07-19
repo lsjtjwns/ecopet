@@ -7,6 +7,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [lightState, setLightState] = useState(false);
   const [tvState, setTvState] = useState(false);
+  const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
   const [petPresent, setPetPresent] = useState(true);
 
   // Load log data
@@ -77,6 +78,27 @@ export default function App() {
           device_name: "스마트 TV 아울렛",
           event_type: "수동 제어",
           details: `관리자가 스마트 TV 전원을 ${statusStr}(으)로 수동 전환함`
+        })
+      });
+      fetchLogs();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleBlindToggle = async () => {
+    const newState = !blindState;
+    setBlindState(newState);
+    const statusStr = newState ? '올림 (열림)' : '내림 (닫힘)';
+    
+    try {
+      await fetch(`${API_BASE}/api/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_name: "스마트 블라인드",
+          event_type: "수동 제어",
+          details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`
         })
       });
       fetchLogs();
@@ -402,7 +424,7 @@ export default function App() {
         <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1.5rem' }}>🎛️ 수동 장치 제어 (Manual Override)</h3>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: window.innerWidth > 768 ? '1fr 1fr 1.2fr' : '1fr',
+          gridTemplateColumns: window.innerWidth > 992 ? '1fr 1fr 1fr 1.2fr' : '1fr',
           gap: '1rem'
         }}>
           <button 
@@ -427,6 +449,18 @@ export default function App() {
             onClick={handleTvToggle}
           >
             📺 스마트 TV {tvState ? '차단 (현재 ON)' : '공급 (현재 OFF)'}
+          </button>
+
+          <button 
+            className="btn" 
+            style={{ 
+              borderColor: blindState ? '#fbd604' : 'rgba(255,255,255,0.08)', 
+              color: blindState ? '#fbd604' : '#f5f6f8',
+              justifyContent: 'center'
+            }}
+            onClick={handleBlindToggle}
+          >
+            ⛺ 블라인드 {blindState ? '내리기 (현재 올림)' : '올리기 (현재 내림)'}
           </button>
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -462,10 +496,10 @@ export default function App() {
         backdropFilter: 'blur(12px)'
       }}>
         <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.25rem' }}>
-          🗄️ SQLite 데이터베이스 실시간 연동 로그
+          🗄️ 데이터베이스 실시간 연동 로그
         </h3>
         <p style={{ color: '#9aa0a6', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-          해커톤 대면 평가 전 필수 연동 항목: 시스템 제어 내역 및 가상 IoT 디바이스 로그들이 Supabase 클라우드 데이터베이스에 즉각 누적 및 동기화됩니다.
+          시스템 제어 내역 및 가상 IoT 디바이스 로그들이 Supabase 클라우드 데이터베이스에 즉각 누적 및 동기화됩니다.
         </p>
 
         {/* Database logs table */}
