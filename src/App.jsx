@@ -8,6 +8,7 @@ export default function App() {
   const [lightState, setLightState] = useState(false);
   const [tvState, setTvState] = useState(false);
   const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
+  const [acState, setAcState] = useState(false);
   const [petPresent, setPetPresent] = useState(true);
 
   // Load log data
@@ -99,6 +100,27 @@ export default function App() {
           device_name: "스마트 블라인드",
           event_type: "수동 제어",
           details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`
+        })
+      });
+      fetchLogs();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleAcToggle = async () => {
+    const newState = !acState;
+    setAcState(newState);
+    const statusStr = newState ? 'ON' : 'OFF';
+    
+    try {
+      await fetch(`${API_BASE}/api/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_name: "스마트 에어컨",
+          event_type: "수동 제어",
+          details: `관리자가 스마트 에어컨 전원을 ${statusStr}(으)로 수동 전환함`
         })
       });
       fetchLogs();
@@ -424,7 +446,7 @@ export default function App() {
         <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '1.5rem' }}>🎛️ 수동 장치 제어 (Manual Override)</h3>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: window.innerWidth > 768 ? '1fr 1fr 1fr' : '1fr',
+          gridTemplateColumns: window.innerWidth > 992 ? '1fr 1fr 1fr 1fr' : '1fr',
           gap: '1rem'
         }}>
           <button 
@@ -461,6 +483,18 @@ export default function App() {
             onClick={handleBlindToggle}
           >
             ⛺ 블라인드 {blindState ? '내리기 (현재 올림)' : '올리기 (현재 내림)'}
+          </button>
+
+          <button 
+            className="btn" 
+            style={{ 
+              borderColor: acState ? '#fbd604' : 'rgba(255,255,255,0.08)', 
+              color: acState ? '#fbd604' : '#f5f6f8',
+              justifyContent: 'center'
+            }}
+            onClick={handleAcToggle}
+          >
+            ❄️ 에어컨 {acState ? '끄기 (현재 ON)' : '켜기 (현재 OFF)'}
           </button>
         </div>
       </div>
