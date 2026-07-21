@@ -157,6 +157,7 @@ export default function App() {
     const hours = [];
     const tvVals = [];
     const lightVals = [];
+    const acVals = [];
     
     const now = new Date();
     const currentHour = now.getHours();
@@ -169,20 +170,23 @@ export default function App() {
         // Current hour values based on state
         tvVals.push(tvState ? 120 : 0);
         lightVals.push(lightState ? 30 : 0);
+        acVals.push(acState ? 250 : 0);
       } else {
         // Simulated history
         if (i > 4) {
           // Pet awake (high usage)
           tvVals.push(115 + (i % 3) * 5); // ~120W
           lightVals.push(28 + (i % 2) * 2);  // ~30W
+          acVals.push(240 + (i % 3) * 10);   // ~250W
         } else {
-          // Pet sleeping (low usage)
+          // Pet sleeping (low usage / eco saving)
           tvVals.push(0);
           lightVals.push(4 + (i % 2) * 1);    // ~5W
+          acVals.push(0); // AC automatically turned OFF when sleeping
         }
       }
     }
-    return { hours, tvVals, lightVals };
+    return { hours, tvVals, lightVals, acVals };
   };
 
   const chartData = getPowerChartData();
@@ -195,7 +199,7 @@ export default function App() {
     const chartWidth = width - padding * 2;
     const chartHeight = height - padding * 2;
     
-    const maxVal = 140; // Max Watts
+    const maxVal = 300; // Max Watts (scaled up for AC)
     
     // Scale helper
     const getX = (index) => padding + (index / 12) * chartWidth;
@@ -204,6 +208,7 @@ export default function App() {
     // Build SVG path
     let tvPath = "";
     let lightPath = "";
+    let acPath = "";
     
     chartData.tvVals.forEach((val, index) => {
       const x = getX(index);
@@ -225,10 +230,20 @@ export default function App() {
       }
     });
 
+    chartData.acVals.forEach((val, index) => {
+      const x = getX(index);
+      const y = getY(val);
+      if (index === 0) {
+        acPath += `M ${x} ${y}`;
+      } else {
+        acPath += ` L ${x} ${y}`;
+      }
+    });
+
     return (
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" className="svg-chart">
         {/* Horizontal gridlines */}
-        {[0, 50, 100, 140].map((gridVal) => (
+        {[0, 100, 200, 300].map((gridVal) => (
           <g key={gridVal}>
             <line 
               x1={padding} 
@@ -264,11 +279,17 @@ export default function App() {
           </text>
         ))}
 
+        {/* AC Line */}
+        <path d={acPath} fill="none" stroke="#06b6d4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         {/* TV Line */}
         <path d={tvPath} fill="none" stroke="#fbd604" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         {/* Light Line */}
         <path d={lightPath} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
+        {/* AC Nodes */}
+        {chartData.acVals.map((val, index) => (
+          <circle key={`ac-node-${index}`} cx={getX(index)} cy={getY(val)} r="3" fill="#06b6d4" />
+        ))}
         {/* TV Nodes */}
         {chartData.tvVals.map((val, index) => (
           <circle key={`tv-node-${index}`} cx={getX(index)} cy={getY(val)} r="3" fill="#fbd604" />
@@ -423,6 +444,10 @@ export default function App() {
 
         {/* Legend */}
         <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '1rem', fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ width: '12px', height: '4px', backgroundColor: '#06b6d4', borderRadius: '2px', display: 'inline-block' }}></span>
+            <span>스마트 에어컨 (Max 250W)</span>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#fbd604', borderRadius: '2px', display: 'inline-block' }}></span>
             <span>스마트 TV (Max 120W)</span>
