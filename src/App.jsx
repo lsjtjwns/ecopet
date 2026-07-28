@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import mqtt from 'mqtt';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
 
@@ -41,7 +42,25 @@ export default function App() {
     initDb();
     // Poll logs every 5 seconds for updates
     const interval = setInterval(fetchLogs, 5000);
-    return () => clearInterval(interval);
+    
+    // Connect to local MQTT broker for PIR motion sensor
+    const client = mqtt.connect('wss://test.mosquitto.org:8081');
+    client.on('connect', () => {
+      console.log('Connected to MQTT');
+      client.subscribe('xiao/+/motion', { qos: 0 });
+    });
+    client.on('message', (topic, payload) => {
+      if (topic.includes('/motion')) {
+        const motionVal = payload.toString();
+        // 1 means motion detected (Not Sleeping), 0 means no motion (Sleeping)
+        setPetPresent(motionVal === '1');
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      client.end();
+    };
   }, []);
 
   // Toggle handlers
@@ -387,10 +406,10 @@ export default function App() {
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚡ 스마트홈 제어 상태</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fbd604' }}>
-                {petPresent ? "수면 중 (에너지 절감 모드)" : "부재 중 (대기 모드)"}
+                {petPresent ? "수면 중 아님" : "수면 중 (에너지 절감 모드)"}
               </div>
               <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.25rem', fontWeight: 600 }}>
-                {petPresent ? "✓ 절감 알고리즘 자동 작동 중" : "✓ 대기전력 보호 상태"}
+                {petPresent ? "✓ 움직임 감지됨 (일반 모드 작동)" : "✓ 절감 알고리즘 자동 작동 중"}
               </div>
             </div>
 
@@ -398,12 +417,12 @@ export default function App() {
 
             {/* Metric 2 */}
             <div style={{ marginBottom: '1.5rem' }}>
-              <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚖️ 스마트 방석 센서 상태</div>
+              <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚖️ 스마트 동작 센서 상태</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800 }}>
-                {petPresent ? "안착함" : "미안착"}
+                {petPresent ? "움직임 감지" : "움직임 없음"}
               </div>
               <div style={{ fontSize: '0.85rem', color: petPresent ? '#10b981' : '#9aa0a6', marginTop: '0.25rem', fontWeight: 600 }}>
-                {petPresent ? "● 반려견 침대 재실 감지됨" : "○ 반려견 침대 부재 상태"}
+                {petPresent ? "● 활발함 (수면 아님)" : "○ 휴식/수면 중"}
               </div>
             </div>
 
