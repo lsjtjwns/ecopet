@@ -18,6 +18,18 @@ export default function App() {
   const [deviceId, setDeviceId] = useState('');
   const [mqttClient, setMqttClient] = useState(null);
 
+  // Map AC temp (18~30) to PWM speed (255~60)
+  // Lower temp = higher speed
+  const calculateFanSpeed = (temp) => {
+    const minPWM = 60;
+    const maxPWM = 255;
+    const minTemp = 18;
+    const maxTemp = 30;
+    const ratio = (temp - minTemp) / (maxTemp - minTemp);
+    const speed = Math.floor(maxPWM - (ratio * (maxPWM - minPWM)));
+    return Math.max(minPWM, Math.min(maxPWM, speed));
+  };
+
   // Load log data
   const fetchLogs = async () => {
     try {
@@ -175,11 +187,15 @@ export default function App() {
   const handleAcToggle = async () => {
     const newState = !acState;
     setAcState(newState);
-    const statusStr = newState ? 'ON' : 'OFF';
 
-    // Publish MQTT command to ESP32 to control the Fan (mapped to AC button)
+    // Publish MQTT command to ESP32 to control the Fan
     if (mqttClient && deviceId) {
-      mqttClient.publish(`xiao/${deviceId}/fan/set`, statusStr);
+      if (newState) {
+        const speed = calculateFanSpeed(acTemp);
+        mqttClient.publish(`xiao/${deviceId}/fan/set`, speed.toString());
+      } else {
+        mqttClient.publish(`xiao/${deviceId}/fan/set`, 'OFF');
+      }
     }
     
     try {
@@ -198,10 +214,18 @@ export default function App() {
     }
   };
 
-  const handleTempChange = async (diff) => {
-    const newTemp = acTemp + diff;
-    if (newTemp < 18 || newTemp > 30) return; // AC limit
-    setAcTemp(newTemp);
+  const handleTempChange = async (delta) => {
+    if (!acState) return;
+    const newTemp = acTemp + delta;
+    if (newTemp >= 18 && newTemp <= 30) {
+      setAcTemp(newTemp);
+      
+      // Update fan speed dynamically via MQTT
+      if (mqttClient && deviceId) {
+        const speed = calculateFanSpeed(newTemp);
+        mqttClient.publish(`xiao/${deviceId}/fan/set`, speed.toString());
+      }
+    }
     
     try {
       await fetch(`${API_BASE}/api/logs`, {
