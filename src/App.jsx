@@ -11,6 +11,7 @@ export default function App() {
   const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
   const [acState, setAcState] = useState(false);
   const [acTemp, setAcTemp] = useState(24); // Default 24 degrees
+  const [currentTemp, setCurrentTemp] = useState(26.5); // Simulated current ambient temperature
   const [petPresent, setPetPresent] = useState(true);
 
   // Load log data
@@ -63,6 +64,28 @@ export default function App() {
       client.end();
     };
   }, []);
+
+  // Thermodynamic temperature simulation effect
+  useEffect(() => {
+    const tempInterval = setInterval(() => {
+      setCurrentTemp((prev) => {
+        if (acState) {
+          if (prev > acTemp) {
+            return Math.max(acTemp, prev - 0.1);
+          } else if (prev < acTemp) {
+            return Math.min(acTemp, prev + 0.1);
+          }
+        } else {
+          if (prev < 26.8) {
+            return Math.min(26.8, prev + 0.1);
+          }
+        }
+        return prev;
+      });
+    }, 3000);
+
+    return () => clearInterval(tempInterval);
+  }, [acState, acTemp]);
 
   // Toggle handlers
   const handleLightToggle = async () => {
@@ -551,64 +574,80 @@ export default function App() {
             ⛺ 블라인드 {blindState ? '내리기 (현재 올림)' : '올리기 (현재 내림)'}
           </button>
 
-          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
             <button 
               className="btn" 
               style={{ 
                 borderColor: acState ? '#06b6d4' : 'rgba(255,255,255,0.08)', 
                 color: acState ? '#06b6d4' : '#f5f6f8',
-                flex: 2,
-                justifyContent: 'center'
+                justifyContent: 'center',
+                width: '100%'
               }}
               onClick={handleAcToggle}
             >
               ❄️ 에어컨 {acState ? '끄기' : '켜기'}
             </button>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.35rem',
-              background: 'rgba(255, 255, 255, 0.03)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px',
-              padding: '0 0.5rem',
-              flex: 1.5,
-              justifyContent: 'space-between',
-              minWidth: '100px'
-            }}>
-              <span style={{ color: '#06b6d4', fontSize: '0.8rem', fontWeight: 600 }}>🌡️</span>
-              <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>{acTemp}°C</span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <button 
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: acState ? '#06b6d4' : '#64748b',
-                    cursor: acState ? 'pointer' : 'default',
-                    fontSize: '0.8rem',
-                    padding: '0 4px',
-                    lineHeight: 1
-                  }}
-                  onClick={() => handleTempChange(1)}
-                  disabled={!acState}
-                >
-                  ▲
-                </button>
-                <button 
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: acState ? '#06b6d4' : '#64748b',
-                    cursor: acState ? 'pointer' : 'default',
-                    fontSize: '0.8rem',
-                    padding: '0 4px',
-                    lineHeight: 1
-                  }}
-                  onClick={() => handleTempChange(-1)}
-                  disabled={!acState}
-                >
-                  ▼
-                </button>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '0.4rem',
+                flex: 1
+              }}>
+                <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>현재 온도</span>
+                <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>🌡️ {currentTemp.toFixed(1)}°C</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '8px',
+                padding: '0.4rem 0.5rem',
+                flex: 1.2
+              }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>희망 온도</span>
+                  <span style={{ color: '#06b6d4', fontWeight: 700, fontSize: '0.95rem' }}>🎯 {acTemp}°C</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <button 
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: acState ? '#06b6d4' : '#64748b',
+                      cursor: acState ? 'pointer' : 'default',
+                      fontSize: '0.7rem',
+                      padding: '0 2px',
+                      lineHeight: 1
+                    }}
+                    onClick={() => handleTempChange(1)}
+                    disabled={!acState}
+                  >
+                    ▲
+                  </button>
+                  <button 
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: acState ? '#06b6d4' : '#64748b',
+                      cursor: acState ? 'pointer' : 'default',
+                      fontSize: '0.7rem',
+                      padding: '0 2px',
+                      lineHeight: 1
+                    }}
+                    onClick={() => handleTempChange(-1)}
+                    disabled={!acState}
+                  >
+                    ▼
+                  </button>
+                </div>
               </div>
             </div>
           </div>
