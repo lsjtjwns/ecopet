@@ -13,6 +13,9 @@ export default function App() {
   const [acTemp, setAcTemp] = useState(24); // Default 24 degrees
   const [currentTemp, setCurrentTemp] = useState(26.5); // Simulated current ambient temperature
   const [petPresent, setPetPresent] = useState(true);
+  const [currentPower, setCurrentPower] = useState(0.0);
+  const [deviceId, setDeviceId] = useState('');
+  const [mqttClient, setMqttClient] = useState(null);
 
   // Load log data
   const fetchLogs = async () => {
@@ -47,15 +50,27 @@ export default function App() {
 
     // Connect to local MQTT broker for PIR motion sensor
     const client = mqtt.connect('wss://test.mosquitto.org:8081');
+    setMqttClient(client);
     client.on('connect', () => {
       console.log('Connected to MQTT');
       client.subscribe('xiao/+/motion', { qos: 0 });
+      client.subscribe('xiao/+/power', { qos: 0 });
     });
     client.on('message', (topic, payload) => {
       if (topic.includes('/motion')) {
         const motionVal = payload.toString();
         // 1 means motion detected (Not Sleeping), 0 means no motion (Sleeping)
         setPetPresent(motionVal === '1');
+      }
+      if (topic.includes('/power')) {
+        const pwrVal = parseFloat(payload.toString());
+        if (!isNaN(pwrVal)) setCurrentPower(pwrVal);
+        
+        // Extract deviceId to use for publishing commands
+        const parts = topic.split('/');
+        if (parts.length >= 3) {
+          setDeviceId(parts[1]);
+        }
       }
     });
 
@@ -92,6 +107,11 @@ export default function App() {
     const newState = !lightState;
     setLightState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
+    
+    // Publish MQTT command to ESP32 to control the OLED
+    if (mqttClient && deviceId) {
+      mqttClient.publish(`xiao/${deviceId}/led/set`, statusStr);
+    }
     
     try {
       await fetch(`${API_BASE}/api/logs`, {
@@ -233,7 +253,8 @@ export default function App() {
       if (i === 0) {
         // Current hour values based on state
         tvVals.push(tvState ? 120 : 0);
-        lightVals.push(lightState ? 30 : 0);
+        // Use real-time INA219 measured power for the light/OLED in the graph
+        lightVals.push(currentPower);
         acVals.push(acState ? 250 : 0);
       } else {
         // Simulated history
@@ -518,7 +539,7 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>거실 조명 (Max 30W)</span>
+            <span>거실 조명 / OLED 실시간 측정: <strong style={{color: '#10b981'}}>{currentPower.toFixed(2)} mW</strong></span>
           </div>
         </div>
       </div>
