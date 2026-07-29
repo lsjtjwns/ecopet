@@ -21,7 +21,7 @@ export default function App() {
   // Map AC temp (18~30) to PWM speed (255~60)
   // Lower temp = higher speed
   const calculateFanSpeed = (temp) => {
-    const minPWM = 60;
+    const minPWM = 0;
     const maxPWM = 255;
     const minTemp = 18;
     const maxTemp = 30;
