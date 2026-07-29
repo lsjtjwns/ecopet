@@ -119,9 +119,9 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          device_name: "스마트 TV 아울렛",
+          device_name: "TV",
           event_type: "수동 제어",
-          details: `관리자가 스마트 TV 전원을 ${statusStr}(으)로 수동 전환함`
+          details: `관리자가 TV 전원을 ${statusStr}(으)로 수동 전환함`
         })
       });
       fetchLogs();
@@ -161,9 +161,9 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          device_name: "스마트 에어컨",
+          device_name: "에어컨",
           event_type: "수동 제어",
-          details: `관리자가 스마트 에어컨 전원을 ${statusStr}(으)로 수동 전환함`
+          details: `관리자가 에어컨 전원을 ${statusStr}(으)로 수동 전환함`
         })
       });
       fetchLogs();
@@ -182,9 +182,9 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          device_name: "스마트 에어컨",
+          device_name: "에어컨",
           event_type: "온도 설정",
-          details: `관리자가 스마트 에어컨 설정 온도를 ${newTemp}°C로 변경함`
+          details: `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함`
         })
       });
       fetchLogs();
