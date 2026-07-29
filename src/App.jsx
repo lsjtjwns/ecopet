@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
+import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 const API_BASE = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
 
