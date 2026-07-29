@@ -140,7 +140,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          device_name: "스마트 블라인드",
+          device_name: "블라인드",
           event_type: "수동 제어",
           details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`
         })
