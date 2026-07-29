@@ -269,9 +269,10 @@ export default function App() {
   // Calculate simulated and real power consumption history
   const getPowerChartData = () => {
     const data = [];
-    for (let i = 11; i >= 0; i--) {
-      const time = new Date(Date.now() - i * 60 * 60 * 1000);
-      const timeStr = `${time.getHours()}시`;
+    for (let i = 4; i >= 0; i--) {
+      const time = new Date(Date.now() - i * 60 * 1000);
+      const m = time.getMinutes();
+      const timeStr = `${time.getHours()}:${m < 10 ? '0'+m : m}`;
       
       let totalPowerVal = 0;
 
@@ -420,7 +421,7 @@ export default function App() {
         backdropFilter: 'blur(12px)'
       }}>
         <h3 style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: '0.5rem' }}>
-          🔌 실시간 가전 기기 전력 사용량 추이 (최근 12시간)
+          🔌 실시간 가전 기기 전력 사용량 추이 (최근 5분)
         </h3>
         <p style={{ color: '#9aa0a6', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
           방석의 안착 상태(수면 진입)에 따라 전체 전력 소비량을 모니터링합니다.
