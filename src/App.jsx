@@ -510,11 +510,11 @@ export default function App() {
         <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '1rem', fontSize: '0.85rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#06b6d4', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>스마트 에어컨 (Max 250W)</span>
+            <span>에어컨 (Max 250W)</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#fbd604', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>스마트 TV (Max 120W)</span>
+            <span>TV (Max 120W)</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
@@ -559,7 +559,7 @@ export default function App() {
             }}
             onClick={handleTvToggle}
           >
-            📺 스마트 TV {tvState ? '차단 (현재 ON)' : '공급 (현재 OFF)'}
+            📺 TV {tvState ? '차단 (현재 ON)' : '공급 (현재 OFF)'}
           </button>
 
           <button 
