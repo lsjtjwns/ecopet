@@ -10,6 +10,7 @@ export default function App() {
   const [tvState, setTvState] = useState(false);
   const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
   const [acState, setAcState] = useState(false);
+  const [acTemp, setAcTemp] = useState(24); // Default 24 degrees
   const [petPresent, setPetPresent] = useState(true);
 
   // Load log data
@@ -42,7 +43,7 @@ export default function App() {
     initDb();
     // Poll logs every 5 seconds for updates
     const interval = setInterval(fetchLogs, 5000);
-    
+
     // Connect to local MQTT broker for PIR motion sensor
     const client = mqtt.connect('wss://test.mosquitto.org:8081');
     client.on('connect', () => {
@@ -140,6 +141,27 @@ export default function App() {
           device_name: "스마트 에어컨",
           event_type: "수동 제어",
           details: `관리자가 스마트 에어컨 전원을 ${statusStr}(으)로 수동 전환함`
+        })
+      });
+      fetchLogs();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleTempChange = async (diff) => {
+    const newTemp = acTemp + diff;
+    if (newTemp < 18 || newTemp > 30) return; // AC limit
+    setAcTemp(newTemp);
+    
+    try {
+      await fetch(`${API_BASE}/api/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_name: "스마트 에어컨",
+          event_type: "온도 설정",
+          details: `관리자가 스마트 에어컨 설정 온도를 ${newTemp}°C로 변경함`
         })
       });
       fetchLogs();
@@ -406,10 +428,10 @@ export default function App() {
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚡ 스마트홈 제어 상태</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fbd604' }}>
-                {petPresent ? "수면 중 아님" : "수면 중 (에너지 절감 모드)"}
+                {petPresent ? "수면 중 (에너지 절감 모드)" : "부재 중 (대기 모드)"}
               </div>
               <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.25rem', fontWeight: 600 }}>
-                {petPresent ? "✓ 움직임 감지됨 (일반 모드 작동)" : "✓ 절감 알고리즘 자동 작동 중"}
+                {petPresent ? "✓ 절감 알고리즘 자동 작동 중" : "✓ 대기전력 보호 상태"}
               </div>
             </div>
 
@@ -417,12 +439,12 @@ export default function App() {
 
             {/* Metric 2 */}
             <div style={{ marginBottom: '1.5rem' }}>
-              <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚖️ 스마트 동작 센서 상태</div>
+              <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚖️ 스마트 방석 센서 상태</div>
               <div style={{ fontSize: '1.6rem', fontWeight: 800 }}>
-                {petPresent ? "움직임 감지" : "움직임 없음"}
+                {petPresent ? "안착함" : "미안착"}
               </div>
               <div style={{ fontSize: '0.85rem', color: petPresent ? '#10b981' : '#9aa0a6', marginTop: '0.25rem', fontWeight: 600 }}>
-                {petPresent ? "● 활발함 (수면 아님)" : "○ 휴식/수면 중"}
+                {petPresent ? "● 반려견 침대 재실 감지됨" : "○ 반려견 침대 부재 상태"}
               </div>
             </div>
 
@@ -529,17 +551,67 @@ export default function App() {
             ⛺ 블라인드 {blindState ? '내리기 (현재 올림)' : '올리기 (현재 내림)'}
           </button>
 
-          <button 
-            className="btn" 
-            style={{ 
-              borderColor: acState ? '#fbd604' : 'rgba(255,255,255,0.08)', 
-              color: acState ? '#fbd604' : '#f5f6f8',
-              justifyContent: 'center'
-            }}
-            onClick={handleAcToggle}
-          >
-            ❄️ 에어컨 {acState ? '끄기 (현재 ON)' : '켜기 (현재 OFF)'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', width: '100%' }}>
+            <button 
+              className="btn" 
+              style={{ 
+                borderColor: acState ? '#06b6d4' : 'rgba(255,255,255,0.08)', 
+                color: acState ? '#06b6d4' : '#f5f6f8',
+                flex: 2,
+                justifyContent: 'center'
+              }}
+              onClick={handleAcToggle}
+            >
+              ❄️ 에어컨 {acState ? '끄기' : '켜기'}
+            </button>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '8px',
+              padding: '0 0.5rem',
+              flex: 1.5,
+              justifyContent: 'space-between',
+              minWidth: '100px'
+            }}>
+              <span style={{ color: '#06b6d4', fontSize: '0.8rem', fontWeight: 600 }}>🌡️</span>
+              <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>{acTemp}°C</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <button 
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: acState ? '#06b6d4' : '#64748b',
+                    cursor: acState ? 'pointer' : 'default',
+                    fontSize: '0.8rem',
+                    padding: '0 4px',
+                    lineHeight: 1
+                  }}
+                  onClick={() => handleTempChange(1)}
+                  disabled={!acState}
+                >
+                  ▲
+                </button>
+                <button 
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: acState ? '#06b6d4' : '#64748b',
+                    cursor: acState ? 'pointer' : 'default',
+                    fontSize: '0.8rem',
+                    padding: '0 4px',
+                    lineHeight: 1
+                  }}
+                  onClick={() => handleTempChange(-1)}
+                  disabled={!acState}
+                >
+                  ▼
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
