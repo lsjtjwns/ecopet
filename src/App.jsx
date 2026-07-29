@@ -108,11 +108,6 @@ export default function App() {
     setLightState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
     
-    // Publish MQTT command to ESP32 to control the OLED
-    if (mqttClient && deviceId) {
-      mqttClient.publish(`xiao/${deviceId}/led/set`, statusStr);
-    }
-    
     try {
       await fetch(`${API_BASE}/api/logs`, {
         method: 'POST',
@@ -133,6 +128,11 @@ export default function App() {
     const newState = !tvState;
     setTvState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
+
+    // Publish MQTT command to ESP32 to control the OLED (mapped to TV button)
+    if (mqttClient && deviceId) {
+      mqttClient.publish(`xiao/${deviceId}/led/set`, statusStr);
+    }
     
     try {
       await fetch(`${API_BASE}/api/logs`, {
@@ -252,9 +252,9 @@ export default function App() {
 
       if (i === 0) {
         // Current hour values based on state
-        tvVals.push(tvState ? 120 : 0);
-        // Use real-time INA219 measured power for the light/OLED in the graph
-        lightVals.push(currentPower);
+        // Use real-time INA219 measured power for the TV/OLED in the graph
+        tvVals.push(currentPower);
+        lightVals.push(lightState ? 30 : 0);
         acVals.push(acState ? 250 : 0);
       } else {
         // Simulated history
@@ -535,11 +535,11 @@ export default function App() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#fbd604', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>TV (Max 120W)</span>
+            <span>TV / OLED 실시간 측정: <strong style={{color: '#fbd604'}}>{currentPower.toFixed(2)} mW</strong></span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ width: '12px', height: '4px', backgroundColor: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>거실 조명 / OLED 실시간 측정: <strong style={{color: '#10b981'}}>{currentPower.toFixed(2)} mW</strong></span>
+            <span>거실 조명 (Max 30W)</span>
           </div>
         </div>
       </div>
