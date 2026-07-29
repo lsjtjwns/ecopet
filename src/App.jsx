@@ -175,6 +175,11 @@ export default function App() {
     const newState = !acState;
     setAcState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
+
+    // Publish MQTT command to ESP32 to control the Fan (mapped to AC button)
+    if (mqttClient && deviceId) {
+      mqttClient.publish(`xiao/${deviceId}/fan/set`, statusStr);
+    }
     
     try {
       await fetch(`${API_BASE}/api/logs`, {
@@ -236,155 +241,29 @@ export default function App() {
     }
   };
 
-  // Generate 12 hours of power data for the custom SVG chart
+  // Calculate simulated and real power consumption history
   const getPowerChartData = () => {
-    const hours = [];
-    const tvVals = [];
-    const lightVals = [];
-    const acVals = [];
-    
-    const now = new Date();
-    const currentHour = now.getHours();
-
-    for (let i = 12; i >= 0; i--) {
-      const targetHour = (currentHour - i + 24) % 24;
-      hours.push(`${String(targetHour).padStart(2, '0')}:00`);
+    const data = [];
+    for (let i = 11; i >= 0; i--) {
+      const time = new Date(Date.now() - i * 60 * 60 * 1000);
+      const timeStr = `${time.getHours()}시`;
+      
+      let totalPowerVal = 0;
 
       if (i === 0) {
-        // Current hour values based on state
-        // Use real-time INA219 measured power for the TV/OLED in the graph
-        tvVals.push(currentPower);
-        lightVals.push(lightState ? 30 : 0);
-        acVals.push(acState ? 250 : 0);
+        // Current real-time INA219 measured total power
+        totalPowerVal = currentPower;
       } else {
-        // Simulated history
-        if (i > 4) {
-          // Pet awake (high usage)
-          tvVals.push(115 + (i % 3) * 5); // ~120W
-          lightVals.push(28 + (i % 2) * 2);  // ~30W
-          acVals.push(240 + (i % 3) * 10);   // ~250W
-        } else {
-          // Pet sleeping (low usage / eco saving)
-          tvVals.push(0);
-          lightVals.push(4 + (i % 2) * 1);    // ~5W
-          acVals.push(0); // AC automatically turned OFF when sleeping
-        }
+        // Simulated history (random baseline power)
+        totalPowerVal = Math.floor(Math.random() * 50) + 20;
       }
+
+      data.push({
+        name: timeStr,
+        총합산전력: totalPowerVal,
+      });
     }
-    return { hours, tvVals, lightVals, acVals };
-  };
-
-  const chartData = getPowerChartData();
-
-  // Rendering the SVG line chart points
-  const renderSvgChart = () => {
-    const width = 600;
-    const height = 180;
-    const padding = 30;
-    const chartWidth = width - padding * 2;
-    const chartHeight = height - padding * 2;
-    
-    const maxVal = 300; // Max Watts (scaled up for AC)
-    
-    // Scale helper
-    const getX = (index) => padding + (index / 12) * chartWidth;
-    const getY = (val) => height - padding - (val / maxVal) * chartHeight;
-
-    // Build SVG path
-    let tvPath = "";
-    let lightPath = "";
-    let acPath = "";
-    
-    chartData.tvVals.forEach((val, index) => {
-      const x = getX(index);
-      const y = getY(val);
-      if (index === 0) {
-        tvPath += `M ${x} ${y}`;
-      } else {
-        tvPath += ` L ${x} ${y}`;
-      }
-    });
-
-    chartData.lightVals.forEach((val, index) => {
-      const x = getX(index);
-      const y = getY(val);
-      if (index === 0) {
-        lightPath += `M ${x} ${y}`;
-      } else {
-        lightPath += ` L ${x} ${y}`;
-      }
-    });
-
-    chartData.acVals.forEach((val, index) => {
-      const x = getX(index);
-      const y = getY(val);
-      if (index === 0) {
-        acPath += `M ${x} ${y}`;
-      } else {
-        acPath += ` L ${x} ${y}`;
-      }
-    });
-
-    return (
-      <svg viewBox={`0 0 ${width} ${height}`} width="100%" className="svg-chart">
-        {/* Horizontal gridlines */}
-        {[0, 100, 200, 300].map((gridVal) => (
-          <g key={gridVal}>
-            <line 
-              x1={padding} 
-              y1={getY(gridVal)} 
-              x2={width - padding} 
-              y2={getY(gridVal)} 
-              stroke="rgba(255,255,255,0.06)" 
-              strokeWidth="1" 
-            />
-            <text 
-              x={padding - 8} 
-              y={getY(gridVal) + 4} 
-              fill="#64748b" 
-              fontSize="9" 
-              textAnchor="end"
-            >
-              {gridVal}W
-            </text>
-          </g>
-        ))}
-
-        {/* X Axis Labels */}
-        {[0, 3, 6, 9, 12].map((idx) => (
-          <text
-            key={idx}
-            x={getX(idx)}
-            y={height - 10}
-            fill="#64748b"
-            fontSize="9"
-            textAnchor="middle"
-          >
-            {chartData.hours[idx]}
-          </text>
-        ))}
-
-        {/* AC Line */}
-        <path d={acPath} fill="none" stroke="#06b6d4" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        {/* TV Line */}
-        <path d={tvPath} fill="none" stroke="#fbd604" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Light Line */}
-        <path d={lightPath} fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-        {/* AC Nodes */}
-        {chartData.acVals.map((val, index) => (
-          <circle key={`ac-node-${index}`} cx={getX(index)} cy={getY(val)} r="3" fill="#06b6d4" />
-        ))}
-        {/* TV Nodes */}
-        {chartData.tvVals.map((val, index) => (
-          <circle key={`tv-node-${index}`} cx={getX(index)} cy={getY(val)} r="3" fill="#fbd604" />
-        ))}
-        {/* Light Nodes */}
-        {chartData.lightVals.map((val, index) => (
-          <circle key={`light-node-${index}`} cx={getX(index)} cy={getY(val)} r="2.5" fill="#10b981" />
-        ))}
-      </svg>
-    );
+    return data;
   };
 
   return (
@@ -519,27 +398,28 @@ export default function App() {
           🔌 실시간 가전 기기 전력 사용량 추이 (최근 12시간)
         </h3>
         <p style={{ color: '#9aa0a6', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-          방석의 안착 상태(수면 진입)에 따라 거실 TV 전력 공급이 자동 차단되고 거실 조도가 억제되어 에너지가 절감되는 전력 추이 그래프입니다.
+          방석의 안착 상태(수면 진입)에 따라 전체 전력 소비량을 모니터링합니다.
         </p>
         
-        {/* Custom SVG Line Chart */}
-        <div style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: '12px', padding: '1rem' }}>
-          {renderSvgChart()}
+        <div style={{ height: '300px', width: '100%', marginTop: '1rem' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={getPowerChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
+              <YAxis stroke="#6b7280" fontSize={12} />
+              <Tooltip 
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+              />
+              <Line type="monotone" dataKey="총합산전력" stroke="#ef4444" strokeWidth={3} dot={{ r: 5 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         {/* Legend */}
-        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '1rem', fontSize: '0.85rem' }}>
+        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginTop: '1rem', fontSize: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ width: '12px', height: '4px', backgroundColor: '#06b6d4', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>에어컨 (Max 250W)</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ width: '12px', height: '4px', backgroundColor: '#fbd604', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>TV / OLED 실시간 측정: <strong style={{color: '#fbd604'}}>{currentPower.toFixed(2)} mW</strong></span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ width: '12px', height: '4px', backgroundColor: '#10b981', borderRadius: '2px', display: 'inline-block' }}></span>
-            <span>거실 조명 (Max 30W)</span>
+            <span style={{ width: '12px', height: '4px', backgroundColor: '#ef4444', borderRadius: '2px', display: 'inline-block' }}></span>
+            <span>⚡ 실시간 총 합산 전력: <strong style={{color: '#ef4444'}}>{currentPower.toFixed(2)} mW</strong></span>
           </div>
         </div>
       </div>
