@@ -17,6 +17,20 @@ export default function App() {
   const [currentPower, setCurrentPower] = useState(0.0);
   const [deviceId, setDeviceId] = useState('');
   const [mqttClient, setMqttClient] = useState(null);
+  const [powerHistory, setPowerHistory] = useState(() => {
+    const data = [];
+    const now = Date.now();
+    for (let i = 299; i >= 0; i--) {
+      const time = new Date(now - i * 1000);
+      const m = time.getMinutes();
+      const s = time.getSeconds();
+      data.push({
+        name: `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`,
+        총합산전력: 0
+      });
+    }
+    return data;
+  });
 
   // Map AC temp (18~30) to PWM speed (255~60)
   // Lower temp = higher speed
@@ -77,7 +91,18 @@ export default function App() {
       }
       if (topic.includes('/power')) {
         const pwrVal = parseFloat(payload.toString());
-        if (!isNaN(pwrVal)) setCurrentPower(pwrVal);
+        if (!isNaN(pwrVal)) {
+          setCurrentPower(pwrVal);
+          setPowerHistory(prev => {
+            const time = new Date();
+            const m = time.getMinutes();
+            const s = time.getSeconds();
+            const timeStr = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+            const newHistory = [...prev, { name: timeStr, 총합산전력: pwrVal }];
+            if (newHistory.length > 300) newHistory.shift();
+            return newHistory;
+          });
+        }
         
         // Extract deviceId to use for publishing commands
         const parts = topic.split('/');
@@ -266,31 +291,7 @@ export default function App() {
     }
   };
 
-  // Calculate simulated and real power consumption history
-  const getPowerChartData = () => {
-    const data = [];
-    for (let i = 4; i >= 0; i--) {
-      const time = new Date(Date.now() - i * 60 * 1000);
-      const m = time.getMinutes();
-      const timeStr = `${time.getHours()}:${m < 10 ? '0'+m : m}`;
-      
-      let totalPowerVal = 0;
-
-      if (i === 0) {
-        // Current real-time INA219 measured total power
-        totalPowerVal = currentPower;
-      } else {
-        // Simulated history (random baseline power)
-        totalPowerVal = Math.floor(Math.random() * 50) + 20;
-      }
-
-      data.push({
-        name: timeStr,
-        총합산전력: totalPowerVal,
-      });
-    }
-    return data;
-  };
+  // powerHistory is now managed in state based on real MQTT data
 
   return (
     <div className="container" style={{ paddingBottom: '4rem' }}>
@@ -429,7 +430,7 @@ export default function App() {
         
         <div style={{ height: '300px', width: '100%', marginTop: '1rem' }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={getPowerChartData()} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <LineChart data={powerHistory} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
               <YAxis stroke="#6b7280" fontSize={12} />
