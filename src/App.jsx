@@ -437,7 +437,7 @@ export default function App() {
               <Tooltip 
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
-              <Line type="monotone" dataKey="총합산전력" stroke="#ef4444" strokeWidth={3} dot={{ r: 5 }} />
+              <Line type="monotone" dataKey="총합산전력" stroke="#ef4444" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
