@@ -137,6 +137,12 @@ export default function App() {
     client.on('message', (topic, payload) => {
       const payloadStr = payload.toString();
 
+      // Extract deviceId from any incoming topic
+      const parts = topic.split('/');
+      if (parts.length >= 2 && parts[1] !== 'all') {
+        setDeviceId(parts[1]);
+      }
+
       if (topic.includes('/motion')) {
         setPetPresent(payloadStr === '1');
       }
