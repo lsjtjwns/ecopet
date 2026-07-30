@@ -21,7 +21,8 @@ export default function App() {
   const [acTemp, setAcTemp] = useState(() => Number(localStorage.getItem('acTemp')) || 24);
 
   const [targetTemp, setTargetTemp] = useState(23.0);
-  const [petPresent, setPetPresent] = useState(false); // 수면/안착 여부
+  const [petPresent, setPetPresent] = useState(false); // 안착 여부
+  const [isSleeping, setIsSleeping] = useState(false); // 10초 이상 안착 시 수면 중 판단
   const [currentWeight, setCurrentWeight] = useState(0.0); // 실시간 로드셀 무게(g)
   const [currentTemp, setCurrentTemp] = useState(22.5);
   const [currentPower, setCurrentPower] = useState(0.0);
@@ -29,6 +30,21 @@ export default function App() {
   const [mqttConnected, setMqttConnected] = useState(false); // MQTT 연결 상태 표시용
 
   const mqttClientRef = useRef(null);
+
+  // 10초 연속 안착 시 '강아지 수면 중' 상태 전환 타이머
+  useEffect(() => {
+    let timer = null;
+    if (petPresent) {
+      timer = setTimeout(() => {
+        setIsSleeping(true);
+      }, 10000); // 10초 타이머
+    } else {
+      setIsSleeping(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [petPresent]);
 
   // 5분 간격 (300초 데이터) 실시간 전력 그래프 히스토리 초기화
   const [powerHistory, setPowerHistory] = useState(() => {
@@ -408,11 +424,11 @@ export default function App() {
             {/* Metric 1 */}
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚡ 스마트홈 제어 상태</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fbd604' }}>
-                {petPresent ? "수면 중 (에너지 절감 모드)" : "부재 중 (대기 모드)"}
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: isSleeping ? '#10b981' : (petPresent ? '#fbd604' : '#9aa0a6') }}>
+                {isSleeping ? "강아지 수면 중 (에너지 절감 모드)" : (petPresent ? "강아지 안착 중 (활동 모드)" : "부재 중 (대기 모드)")}
               </div>
-              <div style={{ fontSize: '0.85rem', color: '#10b981', marginTop: '0.25rem', fontWeight: 600 }}>
-                {petPresent ? "✓ 절감 알고리즘 자동 작동 중" : "✓ 대기전력 보호 상태"}
+              <div style={{ fontSize: '0.85rem', color: isSleeping ? '#10b981' : (petPresent ? '#fbd604' : '#10b981'), marginTop: '0.25rem', fontWeight: 600 }}>
+                {isSleeping ? "✓ 수면 10초 지속: 절감 알고리즘 자동 작동 중" : (petPresent ? "● 방석 안착 감지 (10초 후 수면 전환 대기)" : "✓ 대기전력 보호 상태")}
               </div>
             </div>
 
