@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.3.0';
+const APP_VERSION = 'v1.3.1';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -78,27 +78,23 @@ export default function App() {
     }
   };
 
-  const addLog = async (device_name, event_type, details) => {
-    try {
-      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      await fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
-        method: 'POST',
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SUPABASE_KEY,
-          "Authorization": `Bearer ${SUPABASE_KEY}`
-        },
-        body: JSON.stringify({
-          timestamp: nowStr,
-          device_name,
-          event_type,
-          details
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error("Supabase addLog error:", e);
-    }
+  const addLog = (device_name, event_type, details) => {
+    // Supabase 로그 저장을 비블로킹(fire-and-forget) 처리하여 버튼 클릭 딜레이 0ms로 단축
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
+      method: 'POST',
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({
+        timestamp: nowStr,
+        device_name,
+        event_type,
+        details
+      })
+    }).then(() => fetchLogs()).catch(e => console.error("Supabase addLog error:", e));
   };
 
   const handleClearLogs = async () => {
