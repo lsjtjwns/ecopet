@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.4.0';
+const APP_VERSION = 'v1.4.1';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -224,7 +224,6 @@ export default function App() {
     localStorage.setItem('lightState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
     sendMqttCommand('led', statusStr);
-    sendMqttCommand('light', statusStr);
     addLog("스마트 조명", "수동 제어", `관리자가 거실 조명을 ${statusStr}(으)로 수동 전환함`);
   };
 
@@ -234,7 +233,6 @@ export default function App() {
     localStorage.setItem('tvState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
     sendMqttCommand('oled', statusStr);
-    sendMqttCommand('tv', statusStr);
     addLog("TV", "수동 제어", `관리자가 TV 전원을 ${statusStr}(으)로 수동 전환함`);
   };
 
