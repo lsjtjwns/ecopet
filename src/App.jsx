@@ -39,8 +39,11 @@ export default function App() {
         setIsSleeping(true);
 
         // 강아지가 잠들었을 때 켜져 있는 TV, 전등, 에어컨 자동 차단 (에너지 절감 모드)
+        let shutDownList = [];
+
         setTvState(prev => {
           if (prev) {
+            shutDownList.push("OLED TV");
             localStorage.setItem('tvState', 'false');
             if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'OFF');
           }
@@ -49,6 +52,7 @@ export default function App() {
 
         setLightState(prev => {
           if (prev) {
+            shutDownList.push("전등(LED)");
             localStorage.setItem('lightState', 'false');
             if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'OFF');
           }
@@ -57,11 +61,34 @@ export default function App() {
 
         setAcState(prev => {
           if (prev) {
+            shutDownList.push("에어컨(팬)");
             localStorage.setItem('acState', 'false');
             if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'OFF');
           }
           return false;
         });
+
+        // Supabase DB에 절감 알고리즘 자동 실행 로그 전송
+        setTimeout(() => {
+          const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+          const detailsStr = shutDownList.length > 0 
+            ? `강아지 수면 감지: 켜져 있던 [${shutDownList.join(', ')}] 대기전력 자동 차단 완료`
+            : "강아지 수면 감지: 모든 가전기기가 이미 꺼져 있어 대기전력 안심 유지 중";
+          fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
+            method: 'POST',
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": SUPABASE_KEY,
+              "Authorization": `Bearer ${SUPABASE_KEY}`
+            },
+            body: JSON.stringify({
+              timestamp: nowStr,
+              device_name: "에너지 절감기",
+              event_type: "자동 차단",
+              details: detailsStr
+            })
+          }).then(() => fetchLogs()).catch(e => console.error(e));
+        }, 500);
 
       }, 10000); // 10초 타이머
     } else {
