@@ -114,21 +114,24 @@ export default function App() {
       fetchTelemetry();
     }, 2000);
 
-    // Derive MQTT WebSocket URL dynamically from API_BASE / SSL environment
-    const wsUrl = API_BASE.startsWith('https://')
-      ? API_BASE.replace('https://', 'wss://')
-      : `ws://${window.location.hostname}:8083`;
+    // Public MQTT Broker test.mosquitto.org WebSocket URL
+    const wsUrl = window.location.protocol === 'https:'
+      ? 'wss://test.mosquitto.org:8081'
+      : 'ws://test.mosquitto.org:8080';
 
-    console.log("Connecting MQTT broker to:", wsUrl);
+    console.log("Connecting Public MQTT broker to:", wsUrl);
     const client = mqtt.connect(wsUrl);
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('Connected to MQTT Broker via WebSocket');
+      console.log('Connected to Public MQTT Broker (test.mosquitto.org) via WebSocket');
+      client.subscribe('xiao/+/motion', { qos: 0 });
+      client.subscribe('xiao/+/power', { qos: 0 });
+      client.subscribe('xiao/+/temp', { qos: 0 });
+      client.subscribe('xiao/+/environment', { qos: 0 });
       client.subscribe('ecopet_seojun/+/motion', { qos: 0 });
       client.subscribe('ecopet_seojun/+/power', { qos: 0 });
       client.subscribe('ecopet_seojun/+/temp', { qos: 0 });
-      client.subscribe('ecopet_seojun/+/environment', { qos: 0 });
     });
 
     client.on('message', (topic, payload) => {
@@ -188,43 +191,26 @@ export default function App() {
     };
   }, []);
 
-  // Unified Control Helper (REST API + Local Fallback + MQTT WebSocket)
+  // Direct Control Helper (Public MQTT + Local Fallback)
   const sendControl = async (device, value) => {
-    let success = false;
+    // 1. Direct Public MQTT WebSocket publish (test.mosquitto.org)
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+      mqttClientRef.current.publish(`xiao/all/${device}/set`, String(value));
+      mqttClientRef.current.publish(`ecopet_seojun/all/${device}/set`, String(value));
+      if (deviceId) {
+        mqttClientRef.current.publish(`xiao/${deviceId}/${device}/set`, String(value));
+        mqttClientRef.current.publish(`ecopet_seojun/${deviceId}/${device}/set`, String(value));
+      }
+    }
 
-    // 1. Primary: Try API_BASE (lines 5-7 preserving trycloudflare URL)
+    // 2. Secondary API_BASE attempt if backend is active
     try {
-      const res = await fetch(`${API_BASE}/api/control`, {
+      await fetch(`${API_BASE}/api/control`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device, value: String(value) })
       });
-      if (res.ok) success = true;
-    } catch (e) {
-      console.warn('Primary API_BASE control endpoint error:', e);
-    }
-
-    // 2. Local network fallback if primary API_BASE is unreachable
-    if (!success) {
-      try {
-        await fetch(`http://172.20.10.2:5000/api/control`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ device, value: String(value) }),
-          mode: 'cors'
-        });
-      } catch (e) {
-        console.warn('Local IP fallback endpoint error:', e);
-      }
-    }
-
-    // 3. Direct MQTT WebSocket publish fallback
-    if (mqttClientRef.current && mqttClientRef.current.connected) {
-      mqttClientRef.current.publish(`ecopet_seojun/all/${device}/set`, String(value));
-      if (deviceId) {
-        mqttClientRef.current.publish(`ecopet_seojun/${deviceId}/${device}/set`, String(value));
-      }
-    }
+    } catch (e) {}
   };
 
   // Toggle handlers
