@@ -132,21 +132,19 @@ export default function App() {
     fetchLogs();
     const logInterval = setInterval(fetchLogs, 4000);
 
-    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+    const client = mqtt.connect('wss://test.mosquitto.org:8081');
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('Public MQTT Broker Connected (wss://broker.emqx.io:8084/mqtt)');
+      console.log('Public MQTT Broker Connected (wss://test.mosquitto.org:8081)');
       client.subscribe('xiao/+/motion', { qos: 0 });
-      client.subscribe('xiao/+/power', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
-      client.subscribe('xiao/+/status', { qos: 0 });
     });
 
     client.on('message', (topic, payload) => {
       const payloadStr = payload.toString();
 
-      // 디바이스 MAC/ID 자동 추출 (예: xiao/a56364/power)
+      // 디바이스 MAC/ID 자동 추출
       const parts = topic.split('/');
       if (parts.length >= 2 && parts[1] !== 'all') {
         setDeviceId(parts[1]);
@@ -155,23 +153,6 @@ export default function App() {
       // PIR 센서 안착/부재 (1: 수면/안착, 0: 부재)
       if (topic.includes('/motion')) {
         setPetPresent(payloadStr === '1');
-      }
-
-      // INA219 실시간 전력 수신 (mW)
-      if (topic.includes('/power')) {
-        const pwrVal = parseFloat(payloadStr);
-        if (!isNaN(pwrVal)) {
-          setCurrentPower(pwrVal);
-          setPowerHistory(prev => {
-            const time = new Date();
-            const m = time.getMinutes();
-            const s = time.getSeconds();
-            const timeStr = `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-            const newHistory = [...prev, { name: timeStr, 총합산전력: pwrVal }];
-            if (newHistory.length > 300) newHistory.shift();
-            return newHistory;
-          });
-        }
       }
 
       // 실시간 온도 수신
@@ -193,12 +174,8 @@ export default function App() {
   const sendMqttCommand = (device, payload) => {
     if (mqttClientRef.current && mqttClientRef.current.connected) {
       const payloadStr = String(payload);
-      // 1. 공통 전체 토픽 발행
+      // 토픽 체계: xiao/all/<device>/set
       mqttClientRef.current.publish(`xiao/all/${device}/set`, payloadStr);
-      // 2. 개별 보드 ID 토픽 발행
-      if (deviceId) {
-        mqttClientRef.current.publish(`xiao/${deviceId}/${device}/set`, payloadStr);
-      }
     }
   };
 
