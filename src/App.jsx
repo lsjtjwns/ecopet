@@ -20,8 +20,10 @@ export default function App() {
   const [acState, setAcState] = useState(() => localStorage.getItem('acState') === 'true');
   const [acTemp, setAcTemp] = useState(() => Number(localStorage.getItem('acTemp')) || 24);
 
+  const [targetTemp, setTargetTemp] = useState(23.0);
+  const [petPresent, setPetPresent] = useState(false); // 수면/안착 여부
+  const [currentWeight, setCurrentWeight] = useState(0.0); // 실시간 로드셀 무게(g)
   const [currentTemp, setCurrentTemp] = useState(22.5);
-  const [petPresent, setPetPresent] = useState(true);
   const [currentPower, setCurrentPower] = useState(0.0);
   const [deviceId, setDeviceId] = useState('');
   const [mqttConnected, setMqttConnected] = useState(false); // MQTT 연결 상태 표시용
@@ -146,6 +148,7 @@ export default function App() {
       console.log('[MQTT] 연결 성공: wss://test.mosquitto.org:8081');
       setMqttConnected(true);
       client.subscribe('xiao/+/motion', { qos: 0 });
+      client.subscribe('xiao/+/weight', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
       client.subscribe('xiao/+/power', { qos: 0 });
     });
@@ -163,9 +166,17 @@ export default function App() {
         setDeviceId(parts[1]);
       }
 
-      // PIR 센서 안착/부재 (1: 수면/안착, 0: 부재)
+      // PIR / 로드셀 센서 안착/부재 (1: 수면/안착, 0: 부재)
       if (topic.includes('/motion')) {
         setPetPresent(payloadStr === '1');
+      }
+
+      // 실시간 로드셀 무게 수신 (g)
+      if (topic.includes('/weight')) {
+        const wVal = parseFloat(payloadStr);
+        if (!isNaN(wVal)) {
+          setCurrentWeight(wVal >= 0 ? wVal : 0.0);
+        }
       }
 
       // 실시간 온도 수신
@@ -410,8 +421,11 @@ export default function App() {
             {/* Metric 2 */}
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ color: '#9aa0a6', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>⚖️ 스마트 방석 센서 상태</div>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800 }}>
-                {petPresent ? "안착함" : "미안착"}
+              <div style={{ fontSize: '1.6rem', fontWeight: 800, display: 'flex', alignItems: 'baseline', gap: '0.6rem' }}>
+                <span>{petPresent ? "안착함" : "미안착"}</span>
+                <span style={{ fontSize: '1.05rem', color: '#9aa0a6', fontWeight: 600 }}>
+                  ({currentWeight.toFixed(1)} g)
+                </span>
               </div>
               <div style={{ fontSize: '0.85rem', color: petPresent ? '#10b981' : '#9aa0a6', marginTop: '0.25rem', fontWeight: 600 }}>
                 {petPresent ? "● 반려견 침대 재실 감지됨" : "○ 반려견 침대 부재 상태"}
