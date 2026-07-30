@@ -620,11 +620,11 @@ export default function App() {
         <div style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
             <thead>
-              <tr style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6' }}>기록 시간</th>
-                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6' }}>장치명</th>
-                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6' }}>이벤트</th>
-                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6' }}>세부 로그</th>
+              <tr style={{ backgroundColor: 'rgba(0, 0, 0, 0.3)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6', fontWeight: 600 }}>기록 시간</th>
+                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6', fontWeight: 600 }}>장치명</th>
+                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6', fontWeight: 600 }}>이벤트</th>
+                <th style={{ padding: '0.75rem 1rem', color: '#9aa0a6', fontWeight: 600 }}>세부 로그</th>
               </tr>
             </thead>
             <tbody>
@@ -660,30 +660,38 @@ export default function App() {
           </table>
         </div>
 
-        {/* Clear Logs Accordion */}
-        <div style={{ marginTop: '1.5rem' }}>
-          <details style={{
-            background: 'rgba(0,0,0,0.15)',
-            border: '1px solid rgba(255,255,255,0.05)',
-            borderRadius: '8px',
-            padding: '0.75rem 1rem'
-          }}>
-            <summary style={{ cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, color: '#ff4d4d' }}>
-              ⚠️ 데이터베이스 관리 메뉴 (개발자용)
-            </summary>
-            <div style={{ marginTop: '0.75rem' }}>
-              <button 
-                className="btn btn-secondary" 
-                style={{ borderColor: '#ff4d4d', color: '#ff4d4d' }}
-                onClick={handleClearLogs}
-              >
-                데이터베이스 로그 초기화 (Clear Logs Table)
-              </button>
-              <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '1rem' }}>
-                클라우드 Supabase DB의 iot_logs 테이블 내용을 완전히 지우고 초기화합니다.
-              </span>
+        {/* Clear Logs Management Panel matching Image 2 */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.3)',
+          border: '1px solid rgba(239, 68, 68, 0.2)',
+          borderRadius: '12px',
+          padding: '1.25rem',
+          marginTop: '1.5rem'
+        }}>
+          <div style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.9rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            ▼ ⚠️ 데이터베이스 관리 메뉴 (개발자용)
+          </div>
+          <div>
+            <button 
+              style={{
+                background: 'transparent',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
+                padding: '0.75rem 1.25rem',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              onClick={handleClearLogs}
+            >
+              데이터베이스 로그 초기화 (Clear Logs Table)
+            </button>
+            <div style={{ color: '#9aa0a6', fontSize: '0.82rem', marginTop: '0.6rem' }}>
+              클라우드 Supabase DB의 iot_logs 테이블 내용을 완전히 지우고 초기화합니다.
             </div>
-          </details>
+          </div>
         </div>
       </div>
     </div>
