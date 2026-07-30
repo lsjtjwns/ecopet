@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.5.0';
+const APP_VERSION = 'v1.5.1';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -250,9 +250,8 @@ export default function App() {
     setAcState(newState);
     localStorage.setItem('acState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
-    const pwmVal = newState ? calculateFanSpeed(acTemp) : 0;
-    sendMqttCommand('fan', newState ? pwmVal.toString() : 'OFF');
-    addLog("에어컨", "수동 제어", `관리자가 에어컨 전원을 ${statusStr}(으)로 수동 전환함 (PWM: ${pwmVal})`);
+    sendMqttCommand('fan', statusStr);
+    addLog("에어컨", "수동 제어", `관리자가 에어컨 전원을 ${statusStr}(으)로 수동 전환함`);
   };
 
   const handleTempChange = (diff) => {
