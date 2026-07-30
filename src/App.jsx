@@ -32,50 +32,33 @@ export default function App() {
   const mqttClientRef = useRef(null);
   const savedPreSleepStateRef = useRef({ tv: false, light: false, ac: false }); // 수면 전 가전 상태 기억용 메모리
 
-  // 10초 연속 안착 시 '강아지 수면 중' 진입 & 수면 해제 시 수면 전 켜져 있던 가전 자동 복원
+  // 10초 연속 안착 시 '수면 중' (에어컨/조명/TV OFF, 블라인드 내림) & 미안착 시 (에어컨/조명/TV ON, 블라인드 올림)
   useEffect(() => {
     let timer = null;
     if (petPresent) {
       timer = setTimeout(() => {
         setIsSleeping(true);
 
-        // 1. 수면 진입 바로 직전 켜져 있던 가전 상태 기억
-        savedPreSleepStateRef.current = {
-          tv: tvState,
-          light: lightState,
-          ac: acState
-        };
+        // 1. 수면 중: 에어컨, 조명, TV 다 끄고 블라인드 내림 (OFF/닫힘)
+        setAcState(false);
+        localStorage.setItem('acState', 'false');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'OFF');
 
-        // 2. 강아지가 잠들었을 때 켜져 있는 TV, 전등, 에어컨 자동 차단 (에너지 절감 모드)
-        let shutDownList = [];
+        setLightState(false);
+        localStorage.setItem('lightState', 'false');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'OFF');
 
-        if (tvState) {
-          shutDownList.push("OLED TV");
-          setTvState(false);
-          localStorage.setItem('tvState', 'false');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'OFF');
-        }
+        setTvState(false);
+        localStorage.setItem('tvState', 'false');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'OFF');
 
-        if (lightState) {
-          shutDownList.push("전등(LED)");
-          setLightState(false);
-          localStorage.setItem('lightState', 'false');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'OFF');
-        }
+        setBlindState(false);
+        localStorage.setItem('blindState', 'false');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/blind/set', 'OFF');
 
-        if (acState) {
-          shutDownList.push("에어컨(팬)");
-          setAcState(false);
-          localStorage.setItem('acState', 'false');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'OFF');
-        }
-
-        // Supabase DB에 절감 알고리즘 자동 실행 로그 전송
+        // Supabase DB 수면 자동 제어 로그 기록
         setTimeout(() => {
           const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-          const detailsStr = shutDownList.length > 0 
-            ? `강아지 수면 감지: 켜져 있던 [${shutDownList.join(', ')}] 대기전력 자동 차단 완료`
-            : "강아지 수면 감지: 모든 가전기기가 이미 꺼져 있어 대기전력 안심 유지 중";
           fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
             method: 'POST',
             headers: {
@@ -85,43 +68,34 @@ export default function App() {
             },
             body: JSON.stringify({
               timestamp: nowStr,
-              device_name: "에너지 절감기",
-              event_type: "자동 차단",
-              details: detailsStr
+              device_name: "스마트홈 자동제어",
+              event_type: "수면 모드",
+              details: "강아지 수면 감지: 에어컨, 조명, TV 다 끄고 블라인드 내림 완료"
             })
           }).then(() => fetchLogs()).catch(e => console.error(e));
         }, 500);
 
       }, 10000); // 10초 타이머
     } else {
-      // 강아지가 기상하여 수면 모드 해제 시 ➔ 수면 직전에 켜져 있던 가전 자동 복원
-      if (isSleeping) {
-        let restoredList = [];
-        const { tv, light, ac } = savedPreSleepStateRef.current;
+      // 2. 미안착 (부재 / 기상): 에어컨, 조명, TV 키고 블라인드 올림 (ON/열림)
+      if (isSleeping || petPresent === false) {
+        setAcState(true);
+        localStorage.setItem('acState', 'true');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'ON');
 
-        if (tv) {
-          restoredList.push("OLED TV");
-          setTvState(true);
-          localStorage.setItem('tvState', 'true');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'ON');
-        }
+        setLightState(true);
+        localStorage.setItem('lightState', 'true');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'ON');
 
-        if (light) {
-          restoredList.push("전등(LED)");
-          setLightState(true);
-          localStorage.setItem('lightState', 'true');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'ON');
-        }
+        setTvState(true);
+        localStorage.setItem('tvState', 'true');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'ON');
 
-        if (ac) {
-          restoredList.push("에어컨(팬)");
-          setAcState(true);
-          localStorage.setItem('acState', 'true');
-          if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'ON');
-        }
+        setBlindState(true);
+        localStorage.setItem('blindState', 'true');
+        if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/blind/set', 'ON');
 
-        // DB에 복원 로그 기록
-        if (restoredList.length > 0) {
+        if (isSleeping) {
           setTimeout(() => {
             const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
             fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
@@ -133,16 +107,13 @@ export default function App() {
               },
               body: JSON.stringify({
                 timestamp: nowStr,
-                device_name: "에너지 절감기",
-                event_type: "자동 복원",
-                details: `강아지 기상 감지: 수면 전 켜져 있던 [${restoredList.join(', ')}] 원래 상태로 자동 켜짐`
+                device_name: "스마트홈 자동제어",
+                event_type: "미안착 모드",
+                details: "미안착 감지: 에어컨, 조명, TV 키고 블라인드 올림 완료"
               })
             }).then(() => fetchLogs()).catch(e => console.error(e));
           }, 500);
         }
-
-        // 기억 메모리 리셋
-        savedPreSleepStateRef.current = { tv: false, light: false, ac: false };
       }
 
       setIsSleeping(false);
@@ -150,7 +121,7 @@ export default function App() {
     return () => {
       if (timer) clearTimeout(timer);
     };
-  }, [petPresent, isSleeping, tvState, lightState, acState]);
+  }, [petPresent]);
 
   // 5분 간격 (300초 데이터) 실시간 전력 그래프 히스토리 초기화
   const [powerHistory, setPowerHistory] = useState(() => {
