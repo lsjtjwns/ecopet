@@ -6,12 +6,12 @@
 #include <WiFiClient.h>
 #include <PubSubClient.h>
 
-const char* WIFI_SSID = "이서준";
+const char* WIFI_SSID = "seojun";
 const char* WIFI_PASSWORD = "35320300";
 
 // LAN IP of the machine running the MQTT broker (Mosquitto). DHCP-assigned
 // IPs can change on reboot — use a router DHCP reservation if possible.
-const char* MQTT_HOST = "test.mosquitto.org";
+const char* MQTT_HOST = "broker.emqx.io";
 const int MQTT_PORT = 1883;
 
 #define LED_PIN LED_BUILTIN   // GPIO21, inverted: LOW = on, HIGH = off
@@ -19,6 +19,7 @@ const int MQTT_PORT = 1883;
 #define TOUCH_THRESHOLD 40000 // touch value RISES above this when touched
 #define MOTION_PIN D0         // PIR Motion Sensor
 #define RELAY_PIN D1          // 대기 전력 차단용 릴레이 모듈
+#define FAN_PIN D1            // MOSFET 팬 제어 핀 (XIAO ESP32S3 D1)
 
 WiFiClient net;
 PubSubClient mqtt(net);
@@ -29,6 +30,8 @@ char topicLedSet[32];
 char topicLedState[32];
 char topicStatus[32];
 char topicMotion[32];
+char topicFanSetAll[32];
+char topicFanSetId[32];
 
 bool ledState = false;
 unsigned long lastTouchPublish = 0;
@@ -63,12 +66,26 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   String msg;
   for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
   msg.trim();
-  msg.toUpperCase();
 
-  if (String(topic) == topicLedSet) {
-    if (msg == "ON" || msg == "1" || msg == "TRUE") setLed(true, true);
-    else if (msg == "OFF" || msg == "0" || msg == "FALSE") setLed(false, true);
-    else if (msg == "TOGGLE") setLed(!ledState, true);
+  String upperMsg = msg;
+  upperMsg.toUpperCase();
+
+  if (String(topic) == topicLedSet || String(topic) == "xiao/all/led/set") {
+    if (upperMsg == "ON" || upperMsg == "1" || upperMsg == "TRUE") setLed(true, true);
+    else if (upperMsg == "OFF" || upperMsg == "0" || upperMsg == "FALSE") setLed(false, true);
+    else if (upperMsg == "TOGGLE") setLed(!ledState, true);
+  }
+  else if (String(topic) == topicFanSetAll || String(topic) == topicFanSetId || String(topic).endsWith("/fan/set")) {
+    if (upperMsg == "OFF" || upperMsg == "0" || upperMsg == "FALSE") {
+      analogWrite(FAN_PIN, 0);
+      Serial.println("[FAN] OFF (PWM 0)");
+    } else {
+      int pwm = msg.toInt();
+      if (pwm == 0 && (upperMsg == "ON" || upperMsg == "TRUE")) pwm = 255;
+      pwm = constrain(pwm, 0, 255);
+      analogWrite(FAN_PIN, pwm);
+      Serial.printf("[FAN] ON (PWM %d)\n", pwm);
+    }
   }
 }
 
@@ -81,6 +98,8 @@ void buildTopics() {
   snprintf(topicLedState, sizeof(topicLedState), "xiao/%s/led/state", deviceId);
   snprintf(topicStatus, sizeof(topicStatus), "xiao/%s/status", deviceId);
   snprintf(topicMotion, sizeof(topicMotion), "xiao/%s/motion", deviceId);
+  snprintf(topicFanSetAll, sizeof(topicFanSetAll), "xiao/all/fan/set");
+  snprintf(topicFanSetId, sizeof(topicFanSetId), "xiao/%s/fan/set", deviceId);
 }
 
 void connectWiFi() {
@@ -107,6 +126,10 @@ void connectMqtt() {
     if (mqtt.connect(clientId.c_str(), NULL, NULL, topicStatus, 1, true, "offline")) {
       Serial.println(" connected");
       mqtt.subscribe(topicLedSet);
+      mqtt.subscribe("xiao/all/led/set");
+      mqtt.subscribe(topicFanSetAll);
+      mqtt.subscribe(topicFanSetId);
+      mqtt.subscribe("xiao/+/fan/set");
       mqtt.publish(topicStatus, "online", true);
       mqtt.publish(topicLedState, ledState ? "ON" : "OFF", true);
     } else {

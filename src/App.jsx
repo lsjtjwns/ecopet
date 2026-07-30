@@ -132,11 +132,11 @@ export default function App() {
     fetchLogs();
     const logInterval = setInterval(fetchLogs, 4000);
 
-    const client = mqtt.connect('wss://test.mosquitto.org:8081');
+    const client = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('Public MQTT Broker Connected (wss://test.mosquitto.org:8081)');
+      console.log('Public MQTT Broker Connected (wss://broker.emqx.io:8084/mqtt)');
       client.subscribe('xiao/+/motion', { qos: 0 });
       client.subscribe('xiao/+/power', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
