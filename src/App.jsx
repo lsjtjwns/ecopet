@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
-const API_BASE = window.location.hostname === 'localhost' ? 'http://127.0.0.1:8000' : '';
+const API_BASE = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('172.20.') || window.location.hostname.startsWith('192.168.'))
+  ? `http://${(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '172.20.10.2' : window.location.hostname}:5000`
+  : 'https://kenny-striking-cooked-despite.trycloudflare.com';
 
 export default function App() {
   const [logs, setLogs] = useState([]);
@@ -12,10 +14,15 @@ export default function App() {
   const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
   const [acState, setAcState] = useState(false);
   const [acTemp, setAcTemp] = useState(24); // Default 24 degrees
-  const [currentTemp, setCurrentTemp] = useState(26.5); // Simulated current ambient temperature
+  const [currentTemp, setCurrentTemp] = useState(22.5); // Initial real ambient reading
   const [petPresent, setPetPresent] = useState(true);
   const [currentPower, setCurrentPower] = useState(0.0);
+  const [camIp, setCamIp] = useState('172.20.10.3');
+  const [camTimestamp, setCamTimestamp] = useState(Date.now());
+
+
   const [deviceId, setDeviceId] = useState('');
+  const [isRealTemp, setIsRealTemp] = useState(true);
   const [mqttClient, setMqttClient] = useState(null);
   const [powerHistory, setPowerHistory] = useState(() => {
     const data = [];
@@ -32,15 +39,13 @@ export default function App() {
     return data;
   });
 
-  // Map AC temp (18~30) to PWM speed (255~60)
-  // Lower temp = higher speed
   const calculateFanSpeed = (temp) => {
-    const minPWM = 0;
-    const maxPWM = 255;
+    const minPWM = 1;   // 30°C -> PWM 1 (최소 미풍 유지를 위해 0이 아닌 1로 설정)
+    const maxPWM = 255; // 18°C -> PWM 255 (최대 냉방)
     const minTemp = 18;
     const maxTemp = 30;
     const ratio = (temp - minTemp) / (maxTemp - minTemp);
-    const speed = Math.floor(maxPWM - (ratio * (maxPWM - minPWM)));
+    const speed = Math.round(maxPWM - (ratio * (maxPWM - minPWM)));
     return Math.max(minPWM, Math.min(maxPWM, speed));
   };
 
@@ -70,27 +75,92 @@ export default function App() {
     }
   };
 
+  // Fetch live telemetry from Backend API
+  const fetchTelemetry = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/telemetry`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.temp !== null && data.temp !== undefined) {
+          const tVal = parseFloat(data.temp);
+          if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
+            setCurrentTemp(tVal);
+            setIsRealTemp(true);
+          }
+        }
+        if (data.deviceId) setDeviceId(data.deviceId);
+        if (data.power !== null && data.power !== undefined) {
+          const pVal = parseFloat(data.power);
+          if (!isNaN(pVal)) setCurrentPower(pVal);
+        }
+        if (data.motion !== null && data.motion !== undefined) {
+          setPetPresent(data.motion === 1);
+        }
+      }
+    } catch (e) {
+      console.error("Telemetry fetch error:", e);
+    }
+  };
+
+  const mqttClientRef = React.useRef(null);
+
   useEffect(() => {
     initDb();
-    // Poll logs every 5 seconds for updates
-    const interval = setInterval(fetchLogs, 5000);
+    fetchTelemetry();
 
-    // Connect to local MQTT broker for PIR motion sensor
-    const client = mqtt.connect('wss://test.mosquitto.org:8081');
-    setMqttClient(client);
+    // Poll telemetry and logs every 2 seconds for guaranteed real-time sync
+    const interval = setInterval(() => {
+      fetchLogs();
+      fetchTelemetry();
+    }, 2000);
+
+    // Derive MQTT WebSocket URL dynamically from API_BASE / SSL environment
+    const wsUrl = API_BASE.startsWith('https://')
+      ? API_BASE.replace('https://', 'wss://')
+      : `ws://${window.location.hostname}:8083`;
+
+    console.log("Connecting MQTT broker to:", wsUrl);
+    const client = mqtt.connect(wsUrl);
+    mqttClientRef.current = client;
+
     client.on('connect', () => {
-      console.log('Connected to MQTT');
-      client.subscribe('xiao/+/motion', { qos: 0 });
-      client.subscribe('xiao/+/power', { qos: 0 });
+      console.log('Connected to MQTT Broker via WebSocket');
+      client.subscribe('ecopet_seojun/+/motion', { qos: 0 });
+      client.subscribe('ecopet_seojun/+/power', { qos: 0 });
+      client.subscribe('ecopet_seojun/+/temp', { qos: 0 });
+      client.subscribe('ecopet_seojun/+/environment', { qos: 0 });
     });
+
     client.on('message', (topic, payload) => {
+      const payloadStr = payload.toString();
+
       if (topic.includes('/motion')) {
-        const motionVal = payload.toString();
-        // 1 means motion detected (Not Sleeping), 0 means no motion (Sleeping)
-        setPetPresent(motionVal === '1');
+        setPetPresent(payloadStr === '1');
       }
+
+      if (topic.includes('/temp') || topic.includes('/environment')) {
+        let tVal = NaN;
+        const directNum = parseFloat(payloadStr);
+        if (!isNaN(directNum)) {
+          tVal = directNum;
+        } else {
+          try {
+            const parsed = JSON.parse(payloadStr);
+            if (typeof parsed === 'object' && parsed !== null) {
+              if (parsed.temp !== undefined) tVal = parseFloat(parsed.temp);
+              else if (parsed.temperature !== undefined) tVal = parseFloat(parsed.temperature);
+            }
+          } catch (e) {}
+        }
+
+        if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
+          setCurrentTemp(tVal);
+          setIsRealTemp(true);
+        }
+      }
+
       if (topic.includes('/power')) {
-        const pwrVal = parseFloat(payload.toString());
+        const pwrVal = parseFloat(payloadStr);
         if (!isNaN(pwrVal)) {
           setCurrentPower(pwrVal);
           setPowerHistory(prev => {
@@ -118,27 +188,44 @@ export default function App() {
     };
   }, []);
 
-  // Thermodynamic temperature simulation effect
-  useEffect(() => {
-    const tempInterval = setInterval(() => {
-      setCurrentTemp((prev) => {
-        if (acState) {
-          if (prev > acTemp) {
-            return Math.max(acTemp, prev - 0.1);
-          } else if (prev < acTemp) {
-            return Math.min(acTemp, prev + 0.1);
-          }
-        } else {
-          if (prev < 26.8) {
-            return Math.min(26.8, prev + 0.1);
-          }
-        }
-        return prev;
-      });
-    }, 3000);
+  // Unified Control Helper (REST API + Local Fallback + MQTT WebSocket)
+  const sendControl = async (device, value) => {
+    let success = false;
 
-    return () => clearInterval(tempInterval);
-  }, [acState, acTemp]);
+    // 1. Primary: Try API_BASE (lines 5-7 preserving trycloudflare URL)
+    try {
+      const res = await fetch(`${API_BASE}/api/control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device, value: String(value) })
+      });
+      if (res.ok) success = true;
+    } catch (e) {
+      console.warn('Primary API_BASE control endpoint error:', e);
+    }
+
+    // 2. Local network fallback if primary API_BASE is unreachable
+    if (!success) {
+      try {
+        await fetch(`http://172.20.10.2:5000/api/control`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device, value: String(value) }),
+          mode: 'cors'
+        });
+      } catch (e) {
+        console.warn('Local IP fallback endpoint error:', e);
+      }
+    }
+
+    // 3. Direct MQTT WebSocket publish fallback
+    if (mqttClientRef.current && mqttClientRef.current.connected) {
+      mqttClientRef.current.publish(`ecopet_seojun/all/${device}/set`, String(value));
+      if (deviceId) {
+        mqttClientRef.current.publish(`ecopet_seojun/${deviceId}/${device}/set`, String(value));
+      }
+    }
+  };
 
   // Toggle handlers
   const handleLightToggle = async () => {
@@ -146,6 +233,9 @@ export default function App() {
     setLightState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
     
+    // Control 5-NeoPixel LED (D1)
+    sendControl('led', statusStr);
+
     try {
       await fetch(`${API_BASE}/api/logs`, {
         method: 'POST',
@@ -167,10 +257,8 @@ export default function App() {
     setTvState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
 
-    // Publish MQTT command to ESP32 to control the OLED (mapped to TV button)
-    if (mqttClient && deviceId) {
-      mqttClient.publish(`xiao/${deviceId}/led/set`, statusStr);
-    }
+    // Control SSD1306 OLED Screen (TV role)
+    sendControl('oled', statusStr);
     
     try {
       await fetch(`${API_BASE}/api/logs`, {
@@ -192,7 +280,11 @@ export default function App() {
     const newState = !blindState;
     setBlindState(newState);
     const statusStr = newState ? '올림 (열림)' : '내림 (닫힘)';
+    const servoAngle = newState ? '90' : '0';
     
+    // Control SG90 Servo Motor (D2)
+    sendControl('servo', servoAngle);
+
     try {
       await fetch(`${API_BASE}/api/logs`, {
         method: 'POST',
@@ -200,7 +292,7 @@ export default function App() {
         body: JSON.stringify({
           device_name: "블라인드",
           event_type: "수동 제어",
-          details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`
+          details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함 (서보모터: ${servoAngle}도)`
         })
       });
       fetchLogs();
@@ -212,17 +304,13 @@ export default function App() {
   const handleAcToggle = async () => {
     const newState = !acState;
     setAcState(newState);
+    const statusStr = newState ? 'ON' : 'OFF';
+    const pwmVal = newState ? calculateFanSpeed(acTemp) : 0;
+    const msgPayload = newState ? pwmVal.toString() : 'OFF';
 
-    // Publish MQTT command to ESP32 to control the Fan
-    if (mqttClient && deviceId) {
-      if (newState) {
-        const speed = calculateFanSpeed(acTemp);
-        mqttClient.publish(`xiao/${deviceId}/fan/set`, speed.toString());
-      } else {
-        mqttClient.publish(`xiao/${deviceId}/fan/set`, 'OFF');
-      }
-    }
-    
+    // Control Cooling Fan PWM (D0)
+    sendControl('fan', msgPayload);
+
     try {
       await fetch(`${API_BASE}/api/logs`, {
         method: 'POST',
@@ -239,19 +327,16 @@ export default function App() {
     }
   };
 
-  const handleTempChange = async (delta) => {
-    if (!acState) return;
-    const newTemp = acTemp + delta;
-    if (newTemp >= 18 && newTemp <= 30) {
-      setAcTemp(newTemp);
-      
-      // Update fan speed dynamically via MQTT
-      if (mqttClient && deviceId) {
-        const speed = calculateFanSpeed(newTemp);
-        mqttClient.publish(`xiao/${deviceId}/fan/set`, speed.toString());
-      }
-    }
+  const handleTempChange = async (diff) => {
+    const newTemp = acTemp + diff;
+    if (newTemp < 18 || newTemp > 30) return; // AC limit 18°C ~ 30°C
+    setAcTemp(newTemp);
     
+    // Calculate PWM 255~1 (18°C -> 255, 30°C -> 1)
+    const pwmVal = calculateFanSpeed(newTemp);
+    
+    sendControl('fan', pwmVal.toString());
+
     try {
       await fetch(`${API_BASE}/api/logs`, {
         method: 'POST',
@@ -259,7 +344,7 @@ export default function App() {
         body: JSON.stringify({
           device_name: "에어컨",
           event_type: "온도 설정",
-          details: `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함`
+          details: `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함 (PWM: ${pwmVal})`
         })
       });
       fetchLogs();
@@ -351,12 +436,33 @@ export default function App() {
             <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.85rem' }}>LIVE REC [1080P]</span>
             <span style={{ color: '#9aa0a6', fontSize: '0.8rem', marginLeft: '0.5rem' }}>| 거실 스마트 펫 침대</span>
           </div>
-          <div style={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: '12px' }}>
+          <div style={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: '12px', background: '#000' }}>
             <img 
-              src="/sleeping_dog.jpg" 
-              alt="CCTV 모니터링 피드" 
-              style={{ width: '100%', display: 'block', objectFit: 'cover' }}
+              src={`${API_BASE}/api/cam?t=${camTimestamp}`} 
+              onLoad={() => {
+                setCamTimestamp(Date.now());
+              }}
+              onError={(e) => {
+                // If HTTPS proxy fails, try direct local IP
+                e.target.src = `http://172.20.10.3/capture?t=${Date.now()}`;
+                setTimeout(() => setCamTimestamp(Date.now()), 300);
+              }}
+              alt="ESP32 Live Video Feed" 
+              style={{ width: '100%', height: '380px', objectFit: 'contain', display: 'block' }}
             />
+            <div style={{
+              position: 'absolute',
+              bottom: '10px',
+              left: '10px',
+              background: 'rgba(0,0,0,0.7)',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              color: '#10b981',
+              fontWeight: 600
+            }}>
+              ● LIVE ESP32 Cam (Ultra-Reliable Ping-Pong Mode)
+            </div>
           </div>
         </div>
 
@@ -527,7 +633,9 @@ export default function App() {
                 padding: '0.4rem',
                 flex: 1
               }}>
-                <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>현재 온도</span>
+                <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>
+                  현재 온도 {isRealTemp && <span style={{ color: '#10b981', fontSize: '0.65rem' }}>● BME280</span>}
+                </span>
                 <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>🌡️ {currentTemp.toFixed(1)}°C</span>
               </div>
               <div style={{
