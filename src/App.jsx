@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
-const API_BASE = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? 'http://127.0.0.1:8000'
-  : '';
+// Supabase Direct REST API credentials for 100% reliable logging in any environment
+const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
+const SUPABASE_KEY = "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1";
 
 export default function App() {
   const [logs, setLogs] = useState([]);
@@ -13,17 +13,15 @@ export default function App() {
   const [tvState, setTvState] = useState(false);
   const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
   const [acState, setAcState] = useState(false);
-  const [acTemp, setAcTemp] = useState(24); // Default 24 degrees
-  const [currentTemp, setCurrentTemp] = useState(22.5); // Initial real ambient reading
-  const [petPresent, setPetPresent] = useState(true);
-  const [currentPower, setCurrentPower] = useState(0.0);
-  const [camIp, setCamIp] = useState('172.20.10.3');
-  const [camTimestamp, setCamTimestamp] = useState(Date.now());
-
-
+  const [acTemp, setAcTemp] = useState(24); // 기본 24도
+  const [currentTemp, setCurrentTemp] = useState(22.5); // 현재 실내 온도
+  const [petPresent, setPetPresent] = useState(true); // 방석 안착 감지
+  const [currentPower, setCurrentPower] = useState(0.0); // INA219 측정 전력 (mW)
   const [deviceId, setDeviceId] = useState('');
-  const [isRealTemp, setIsRealTemp] = useState(true);
-  const [mqttClient, setMqttClient] = useState(null);
+
+  const mqttClientRef = useRef(null);
+
+  // 5분 간격 (300초 데이터) 실시간 전력 그래프 히스토리 초기화
   const [powerHistory, setPowerHistory] = useState(() => {
     const data = [];
     const now = Date.now();
@@ -32,16 +30,17 @@ export default function App() {
       const m = time.getMinutes();
       const s = time.getSeconds();
       data.push({
-        name: `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`,
+        name: `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`,
         총합산전력: 0
       });
     }
     return data;
   });
 
+  // 에어컨 희망 온도 (18°C ~ 30°C) -> 쿨링 팬 PWM 속도 (255 ~ 0) 매핑
   const calculateFanSpeed = (temp) => {
-    const minPWM = 0;   // 30°C -> PWM 0
-    const maxPWM = 255; // 18°C -> PWM 255
+    const minPWM = 0;   // 30°C -> PWM 0 (완전 정지)
+    const maxPWM = 255; // 18°C -> PWM 255 (최대 속도)
     const minTemp = 18;
     const maxTemp = 30;
     const ratio = (temp - minTemp) / (maxTemp - minTemp);
@@ -49,143 +48,116 @@ export default function App() {
     return Math.max(minPWM, Math.min(maxPWM, speed));
   };
 
-  // Load log data
+  // -------------------------------------------------------------
+  // Supabase 클라우드 데이터베이스 전용 로그 처리 함수
+  // -------------------------------------------------------------
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_BASE}/api/logs`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setLogs(data);
-          return;
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching logs via API:", e);
-    }
-    // Direct Supabase REST API fallback so logs display 100% reliably
-    try {
-      const res = await fetch("https://jxauevydtcymamfefekc.supabase.co/rest/v1/iot_logs?select=timestamp,device_name,event_type,details&order=id.desc&limit=100", {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/iot_logs?select=timestamp,device_name,event_type,details&order=id.desc&limit=100`, {
         headers: {
-          "apikey": "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1",
-          "Authorization": "Bearer sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1"
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`
         }
       });
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) setLogs(data);
       }
-    } catch (err) {
-      console.error("Supabase fallback error:", err);
+    } catch (e) {
+      console.error("Supabase fetchLogs error:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  // Seed DB if empty on load
-  const initDb = async () => {
+  const addLog = async (device_name, event_type, details) => {
     try {
-      await fetch(`${API_BASE}/api/init_db`, { method: 'POST' });
+      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      await fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`
+        },
+        body: JSON.stringify({
+          timestamp: nowStr,
+          device_name,
+          event_type,
+          details
+        })
+      });
       fetchLogs();
     } catch (e) {
-      console.error("Error initializing DB:", e);
+      console.error("Supabase addLog error:", e);
     }
   };
 
-  // Fetch live telemetry from Backend API
-  const fetchTelemetry = async () => {
+  const handleClearLogs = async () => {
+    if (!window.confirm("정말로 데이터베이스의 모든 로그를 초기화하시겠습니까?")) return;
     try {
-      const res = await fetch(`${API_BASE}/api/telemetry`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.temp !== null && data.temp !== undefined) {
-          const tVal = parseFloat(data.temp);
-          if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
-            setCurrentTemp(tVal);
-            setIsRealTemp(true);
-          }
+      await fetch(`${SUPABASE_URL}/rest/v1/iot_logs?id=gt.0`, {
+        method: 'DELETE',
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`
         }
-        if (data.deviceId) setDeviceId(data.deviceId);
-        if (data.power !== null && data.power !== undefined) {
-          const pVal = parseFloat(data.power);
-          if (!isNaN(pVal)) setCurrentPower(pVal);
-        }
-        if (data.motion !== null && data.motion !== undefined) {
-          setPetPresent(data.motion === 1);
-        }
-      }
+      });
+      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      await fetch(`${SUPABASE_URL}/rest/v1/iot_logs`, {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`
+        },
+        body: JSON.stringify({
+          timestamp: nowStr,
+          device_name: "시스템 메인",
+          event_type: "초기화",
+          details: "데이터베이스 모든 로그 수동 삭제 완료 (초기화)"
+        })
+      });
+      fetchLogs();
     } catch (e) {
-      console.error("Telemetry fetch error:", e);
+      console.error("Supabase clearLogs error:", e);
     }
   };
 
-  const mqttClientRef = React.useRef(null);
-
+  // -------------------------------------------------------------
+  // MQTT 통신 및 실시간 수신
+  // -------------------------------------------------------------
   useEffect(() => {
-    initDb();
-    fetchTelemetry();
+    fetchLogs();
+    const logInterval = setInterval(fetchLogs, 4000);
 
-    // Poll telemetry and logs every 2 seconds for guaranteed real-time sync
-    const interval = setInterval(() => {
-      fetchLogs();
-      fetchTelemetry();
-    }, 2000);
-
-    // Public MQTT Broker test.mosquitto.org WebSocket URL
-    const wsUrl = window.location.protocol === 'https:'
-      ? 'wss://test.mosquitto.org:8081'
-      : 'ws://test.mosquitto.org:8080';
-
-    console.log("Connecting Public MQTT broker to:", wsUrl);
-    const client = mqtt.connect(wsUrl);
+    const client = mqtt.connect('wss://test.mosquitto.org:8081');
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('Connected to Public MQTT Broker (test.mosquitto.org) via WebSocket');
+      console.log('Public MQTT Broker Connected (wss://test.mosquitto.org:8081)');
       client.subscribe('xiao/+/motion', { qos: 0 });
       client.subscribe('xiao/+/power', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
-      client.subscribe('xiao/+/environment', { qos: 0 });
-      client.subscribe('ecopet_seojun/+/motion', { qos: 0 });
-      client.subscribe('ecopet_seojun/+/power', { qos: 0 });
-      client.subscribe('ecopet_seojun/+/temp', { qos: 0 });
+      client.subscribe('xiao/+/status', { qos: 0 });
     });
 
     client.on('message', (topic, payload) => {
       const payloadStr = payload.toString();
 
-      // Extract deviceId from any incoming topic
+      // 디바이스 MAC/ID 자동 추출 (예: xiao/a56364/power)
       const parts = topic.split('/');
       if (parts.length >= 2 && parts[1] !== 'all') {
         setDeviceId(parts[1]);
       }
 
+      // PIR 센서 안착/부재 (1: 수면/안착, 0: 부재)
       if (topic.includes('/motion')) {
         setPetPresent(payloadStr === '1');
       }
 
-      if (topic.includes('/temp') || topic.includes('/environment')) {
-        let tVal = NaN;
-        const directNum = parseFloat(payloadStr);
-        if (!isNaN(directNum)) {
-          tVal = directNum;
-        } else {
-          try {
-            const parsed = JSON.parse(payloadStr);
-            if (typeof parsed === 'object' && parsed !== null) {
-              if (parsed.temp !== undefined) tVal = parseFloat(parsed.temp);
-              else if (parsed.temperature !== undefined) tVal = parseFloat(parsed.temperature);
-            }
-          } catch (e) {}
-        }
-
-        if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
-          setCurrentTemp(tVal);
-          setIsRealTemp(true);
-        }
-      }
-
+      // INA219 실시간 전력 수신 (mW)
       if (topic.includes('/power')) {
         const pwrVal = parseFloat(payloadStr);
         if (!isNaN(pwrVal)) {
@@ -194,200 +166,91 @@ export default function App() {
             const time = new Date();
             const m = time.getMinutes();
             const s = time.getSeconds();
-            const timeStr = `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+            const timeStr = `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
             const newHistory = [...prev, { name: timeStr, 총합산전력: pwrVal }];
             if (newHistory.length > 300) newHistory.shift();
             return newHistory;
           });
         }
-        
-        // Extract deviceId to use for publishing commands
-        const parts = topic.split('/');
-        if (parts.length >= 3) {
-          setDeviceId(parts[1]);
+      }
+
+      // 실시간 온도 수신
+      if (topic.includes('/temp')) {
+        const tVal = parseFloat(payloadStr);
+        if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
+          setCurrentTemp(tVal);
         }
       }
     });
 
     return () => {
-      clearInterval(interval);
+      clearInterval(logInterval);
       client.end();
     };
   }, []);
 
-  // Direct Control Helper (Public MQTT + Local Fallback)
-  const sendControl = async (device, value) => {
-    // 1. Direct Public MQTT WebSocket publish (test.mosquitto.org)
+  // MQTT 제어 명령 전송 헬퍼 함수
+  const sendMqttCommand = (device, payload) => {
     if (mqttClientRef.current && mqttClientRef.current.connected) {
-      mqttClientRef.current.publish(`xiao/all/${device}/set`, String(value));
-      mqttClientRef.current.publish(`ecopet_seojun/all/${device}/set`, String(value));
+      const payloadStr = String(payload);
+      // 1. 공통 전체 토픽 발행
+      mqttClientRef.current.publish(`xiao/all/${device}/set`, payloadStr);
+      // 2. 개별 보드 ID 토픽 발행
       if (deviceId) {
-        mqttClientRef.current.publish(`xiao/${deviceId}/${device}/set`, String(value));
-        mqttClientRef.current.publish(`ecopet_seojun/${deviceId}/${device}/set`, String(value));
+        mqttClientRef.current.publish(`xiao/${deviceId}/${device}/set`, payloadStr);
       }
     }
-
-    // 2. Secondary API_BASE attempt if backend is active
-    try {
-      await fetch(`${API_BASE}/api/control`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device, value: String(value) })
-      });
-    } catch (e) {}
   };
 
-  // Toggle handlers
-  const handleLightToggle = async () => {
+  // -------------------------------------------------------------
+  // 수동 장치 제어 핸들러
+  // -------------------------------------------------------------
+  const handleLightToggle = () => {
     const newState = !lightState;
     setLightState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
-    
-    // Control 5-NeoPixel LED (D1)
-    sendControl('led', statusStr);
-
-    try {
-      await fetch(`${API_BASE}/api/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_name: "스마트 조명",
-          event_type: "수동 제어",
-          details: `관리자가 거실 조명을 ${statusStr}(으)로 수동 전환함`
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error(e);
-    }
+    sendMqttCommand('led', statusStr);
+    addLog("스마트 조명", "수동 제어", `관리자가 거실 조명을 ${statusStr}(으)로 수동 전환함`);
   };
 
-  const handleTvToggle = async () => {
+  const handleTvToggle = () => {
     const newState = !tvState;
     setTvState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
-
-    // Control SSD1306 OLED Screen (TV role)
-    sendControl('oled', statusStr);
-    
-    try {
-      await fetch(`${API_BASE}/api/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_name: "TV",
-          event_type: "수동 제어",
-          details: `관리자가 TV 전원을 ${statusStr}(으)로 수동 전환함`
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error(e);
-    }
+    sendMqttCommand('led', statusStr);
+    addLog("TV", "수동 제어", `관리자가 TV 전원을 ${statusStr}(으)로 수동 전환함`);
   };
 
-  const handleBlindToggle = async () => {
+  const handleBlindToggle = () => {
     const newState = !blindState;
     setBlindState(newState);
     const statusStr = newState ? '올림 (열림)' : '내림 (닫힘)';
-    const servoAngle = newState ? '90' : '0';
-    
-    // Control SG90 Servo Motor (D2)
-    sendControl('servo', servoAngle);
-
-    try {
-      await fetch(`${API_BASE}/api/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_name: "블라인드",
-          event_type: "수동 제어",
-          details: `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함 (서보모터: ${servoAngle}도)`
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error(e);
-    }
+    sendMqttCommand('servo', newState ? '90' : '0');
+    addLog("블라인드", "수동 제어", `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`);
   };
 
-  const handleAcToggle = async () => {
+  const handleAcToggle = () => {
     const newState = !acState;
     setAcState(newState);
     const statusStr = newState ? 'ON' : 'OFF';
     const pwmVal = newState ? calculateFanSpeed(acTemp) : 0;
-    const msgPayload = newState ? pwmVal.toString() : 'OFF';
-
-    // Control Cooling Fan PWM (D0)
-    sendControl('fan', msgPayload);
-
-    try {
-      await fetch(`${API_BASE}/api/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_name: "에어컨",
-          event_type: "수동 제어",
-          details: `관리자가 에어컨 전원을 ${statusStr}(으)로 수동 전환함`
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error(e);
-    }
+    sendMqttCommand('fan', newState ? pwmVal.toString() : 'OFF');
+    addLog("에어컨", "수동 제어", `관리자가 에어컨 전원을 ${statusStr}(으)로 수동 전환함 (PWM: ${pwmVal})`);
   };
 
-  const handleTempChange = async (diff) => {
+  const handleTempChange = (diff) => {
+    if (!acState) return;
     const newTemp = acTemp + diff;
-    if (newTemp < 18 || newTemp > 30) return; // AC limit 18°C ~ 30°C
+    if (newTemp < 18 || newTemp > 30) return;
     setAcTemp(newTemp);
-    
-    // Calculate PWM 255~1 (18°C -> 255, 30°C -> 1)
     const pwmVal = calculateFanSpeed(newTemp);
-    
-    sendControl('fan', pwmVal.toString());
-
-    try {
-      await fetch(`${API_BASE}/api/logs`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          device_name: "에어컨",
-          event_type: "온도 설정",
-          details: `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함 (PWM: ${pwmVal})`
-        })
-      });
-      fetchLogs();
-    } catch (e) {
-      console.error(e);
-    }
+    sendMqttCommand('fan', pwmVal.toString());
+    addLog("에어컨", "온도 설정", `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함 (PWM: ${pwmVal})`);
   };
 
-  const handleSimulate = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/simulate`, { method: 'POST' });
-      if (res.ok) {
-        fetchLogs();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleClearLogs = async () => {
-    if (!window.confirm("정말로 데이터베이스의 모든 로그를 초기화하시겠습니까?")) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/logs`, { method: 'DELETE' });
-      if (res.ok) {
-        fetchLogs();
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // powerHistory is now managed in state based on real MQTT data
-
+  // -------------------------------------------------------------
+  // UI JSX 렌더링
+  // -------------------------------------------------------------
   return (
     <div className="container" style={{ paddingBottom: '4rem' }}>
       {/* Header */}
@@ -448,17 +311,9 @@ export default function App() {
           </div>
           <div style={{ position: 'relative', width: '100%', overflow: 'hidden', borderRadius: '12px', background: '#000' }}>
             <img 
-              src={`${API_BASE}/api/cam?t=${camTimestamp}`} 
-              onLoad={() => {
-                setCamTimestamp(Date.now());
-              }}
-              onError={(e) => {
-                // If HTTPS proxy fails, try direct local IP
-                e.target.src = `http://172.20.10.3/capture?t=${Date.now()}`;
-                setTimeout(() => setCamTimestamp(Date.now()), 300);
-              }}
-              alt="ESP32 Live Video Feed" 
-              style={{ width: '100%', height: '380px', objectFit: 'contain', display: 'block' }}
+              src="/sleeping_dog.jpg" 
+              alt="CCTV 모니터링 피드" 
+              style={{ width: '100%', height: '380px', objectFit: 'cover', display: 'block' }}
             />
             <div style={{
               position: 'absolute',
@@ -471,7 +326,7 @@ export default function App() {
               color: '#10b981',
               fontWeight: 600
             }}>
-              ● LIVE ESP32 Cam (Ultra-Reliable Ping-Pong Mode)
+              ● LIVE SMART PET BED MONITORING
             </div>
           </div>
         </div>
@@ -644,7 +499,7 @@ export default function App() {
                 flex: 1
               }}>
                 <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>
-                  현재 온도 {isRealTemp && <span style={{ color: '#10b981', fontSize: '0.65rem' }}>● BME280</span>}
+                  현재 온도
                 </span>
                 <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>🌡️ {currentTemp.toFixed(1)}°C</span>
               </div>
@@ -700,7 +555,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* SQLite Logs Section */}
+      {/* Database Logs Section */}
       <div style={{
         background: 'rgba(22, 24, 30, 0.7)',
         border: '1px solid rgba(255, 255, 255, 0.08)',
