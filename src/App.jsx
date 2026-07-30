@@ -31,12 +31,38 @@ export default function App() {
 
   const mqttClientRef = useRef(null);
 
-  // 10초 연속 안착 시 '강아지 수면 중' 상태 전환 타이머
+  // 10초 연속 안착 시 '강아지 수면 중' 상태 전환 및 가전제품(TV, 전등, 에어컨) 자동 OFF
   useEffect(() => {
     let timer = null;
     if (petPresent) {
       timer = setTimeout(() => {
         setIsSleeping(true);
+
+        // 강아지가 잠들었을 때 켜져 있는 TV, 전등, 에어컨 자동 차단 (에너지 절감 모드)
+        setTvState(prev => {
+          if (prev) {
+            localStorage.setItem('tvState', 'false');
+            if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/tv/set', 'OFF');
+          }
+          return false;
+        });
+
+        setLightState(prev => {
+          if (prev) {
+            localStorage.setItem('lightState', 'false');
+            if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/light/set', 'OFF');
+          }
+          return false;
+        });
+
+        setAcState(prev => {
+          if (prev) {
+            localStorage.setItem('acState', 'false');
+            if (mqttClientRef.current) mqttClientRef.current.publish('xiao/all/fan/set', 'OFF');
+          }
+          return false;
+        });
+
       }, 10000); // 10초 타이머
     } else {
       setIsSleeping(false);
