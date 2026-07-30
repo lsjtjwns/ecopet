@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.4.1';
+const APP_VERSION = 'v1.5.0';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -541,7 +541,7 @@ export default function App() {
                 flex: 1
               }}>
                 <span style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600, marginBottom: '2px' }}>
-                  현재 온도
+                  현재 온도 <span style={{ color: '#10b981', fontSize: '0.65rem' }}>● BMP280</span>
                 </span>
                 <span style={{ color: '#f5f6f8', fontWeight: 700, fontSize: '0.95rem' }}>🌡️ {currentTemp.toFixed(1)}°C</span>
               </div>
