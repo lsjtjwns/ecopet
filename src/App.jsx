@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.1.0';
+const APP_VERSION = 'v1.2.0';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -12,15 +12,19 @@ const SUPABASE_KEY = "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1";
 export default function App() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [lightState, setLightState] = useState(false);
-  const [tvState, setTvState] = useState(false);
-  const [blindState, setBlindState] = useState(true); // true = Up/열림, false = Down/닫힘
-  const [acState, setAcState] = useState(false);
-  const [acTemp, setAcTemp] = useState(24); // 기본 24도
-  const [currentTemp, setCurrentTemp] = useState(22.5); // 현재 실내 온도
-  const [petPresent, setPetPresent] = useState(true); // 방석 안착 감지
-  const [currentPower, setCurrentPower] = useState(0.0); // INA219 측정 전력 (mW)
+
+  // ── 장치 상태: localStorage에서 복원 (새로고침 후에도 유지) ──
+  const [lightState, setLightState] = useState(() => localStorage.getItem('lightState') === 'true');
+  const [tvState, setTvState] = useState(() => localStorage.getItem('tvState') === 'true');
+  const [blindState, setBlindState] = useState(() => localStorage.getItem('blindState') !== 'false'); // 기본 true(열림)
+  const [acState, setAcState] = useState(() => localStorage.getItem('acState') === 'true');
+  const [acTemp, setAcTemp] = useState(() => Number(localStorage.getItem('acTemp')) || 24);
+
+  const [currentTemp, setCurrentTemp] = useState(22.5);
+  const [petPresent, setPetPresent] = useState(true);
+  const [currentPower, setCurrentPower] = useState(0.0);
   const [deviceId, setDeviceId] = useState('');
+  const [mqttConnected, setMqttConnected] = useState(false); // MQTT 연결 상태 표시용
 
   const mqttClientRef = useRef(null);
 
@@ -135,14 +139,23 @@ export default function App() {
     fetchLogs();
     const logInterval = setInterval(fetchLogs, 4000);
 
-    const client = mqtt.connect('wss://test.mosquitto.org:8081');
+    const client = mqtt.connect('wss://test.mosquitto.org:8081', {
+      reconnectPeriod: 3000,  // 3초마다 자동 재연결
+      connectTimeout: 10000,  // 연결 타임아웃 10초
+      keepalive: 30,
+    });
     mqttClientRef.current = client;
 
     client.on('connect', () => {
-      console.log('Public MQTT Broker Connected (wss://test.mosquitto.org:8081)');
+      console.log('[MQTT] 연결 성공: wss://test.mosquitto.org:8081');
+      setMqttConnected(true);
       client.subscribe('xiao/+/motion', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
     });
+
+    client.on('disconnect', () => setMqttConnected(false));
+    client.on('offline', () => setMqttConnected(false));
+    client.on('reconnect', () => console.log('[MQTT] 재연결 시도 중...'));
 
     client.on('message', (topic, payload) => {
       const payloadStr = payload.toString();
@@ -174,11 +187,17 @@ export default function App() {
   }, []);
 
   // MQTT 제어 명령 전송 헬퍼 함수
+  // connected 체크 없이 publish → 라이브러리가 내부 큐에 쌓고 재연결 시 자동 전송
   const sendMqttCommand = (device, payload) => {
-    if (mqttClientRef.current && mqttClientRef.current.connected) {
-      const payloadStr = String(payload);
-      // 토픽 체계: xiao/all/<device>/set
-      mqttClientRef.current.publish(`xiao/all/${device}/set`, payloadStr);
+    const payloadStr = String(payload);
+    const topic = `xiao/all/${device}/set`;
+    if (mqttClientRef.current) {
+      mqttClientRef.current.publish(topic, payloadStr, { qos: 0 }, (err) => {
+        if (err) console.error('[MQTT] publish 실패:', err);
+        else console.log(`[MQTT] 발행: ${topic} -> ${payloadStr}`);
+      });
+    } else {
+      console.warn('[MQTT] 클라이언트 미초기화');
     }
   };
 
@@ -188,6 +207,7 @@ export default function App() {
   const handleLightToggle = () => {
     const newState = !lightState;
     setLightState(newState);
+    localStorage.setItem('lightState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
     sendMqttCommand('led', statusStr);
     addLog("스마트 조명", "수동 제어", `관리자가 거실 조명을 ${statusStr}(으)로 수동 전환함`);
@@ -196,14 +216,16 @@ export default function App() {
   const handleTvToggle = () => {
     const newState = !tvState;
     setTvState(newState);
+    localStorage.setItem('tvState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
-    sendMqttCommand('led', statusStr);
+    sendMqttCommand('oled', statusStr);
     addLog("TV", "수동 제어", `관리자가 TV 전원을 ${statusStr}(으)로 수동 전환함`);
   };
 
   const handleBlindToggle = () => {
     const newState = !blindState;
     setBlindState(newState);
+    localStorage.setItem('blindState', newState);
     const statusStr = newState ? '올림 (열림)' : '내림 (닫힘)';
     sendMqttCommand('servo', newState ? '90' : '0');
     addLog("블라인드", "수동 제어", `관리자가 블라인드를 ${statusStr} 상태로 수동 전환함`);
@@ -212,6 +234,7 @@ export default function App() {
   const handleAcToggle = () => {
     const newState = !acState;
     setAcState(newState);
+    localStorage.setItem('acState', newState);
     const statusStr = newState ? 'ON' : 'OFF';
     const pwmVal = newState ? calculateFanSpeed(acTemp) : 0;
     sendMqttCommand('fan', newState ? pwmVal.toString() : 'OFF');
@@ -223,6 +246,7 @@ export default function App() {
     const newTemp = acTemp + diff;
     if (newTemp < 18 || newTemp > 30) return;
     setAcTemp(newTemp);
+    localStorage.setItem('acTemp', newTemp);
     const pwmVal = calculateFanSpeed(newTemp);
     sendMqttCommand('fan', pwmVal.toString());
     addLog("에어컨", "온도 설정", `관리자가 에어컨 설정 온도를 ${newTemp}°C로 변경함 (PWM: ${pwmVal})`);
@@ -244,21 +268,28 @@ export default function App() {
         boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
         position: 'relative'
       }}>
-        {/* 버전 뱃지 */}
-        <div style={{
-          position: 'absolute',
-          top: '1rem',
-          right: '1rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.4rem',
-          background: 'rgba(16, 185, 129, 0.12)',
-          border: '1px solid rgba(16, 185, 129, 0.35)',
-          borderRadius: '999px',
-          padding: '0.25rem 0.75rem',
-        }}>
-          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
-          <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace' }}>{APP_VERSION}</span>
+        {/* 우상단 뱃지 묶음 */}
+        <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* MQTT 연결 상태 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+            background: mqttConnected ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
+            border: `1px solid ${mqttConnected ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`,
+            borderRadius: '999px', padding: '0.25rem 0.75rem',
+          }}>
+            <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: mqttConnected ? '#10b981' : '#ef4444', display: 'inline-block', animation: mqttConnected ? 'none' : 'fadeIn 1s infinite alternate' }}></span>
+            <span style={{ color: mqttConnected ? '#10b981' : '#ef4444', fontSize: '0.78rem', fontWeight: 700, fontFamily: 'monospace' }}>
+              {mqttConnected ? 'MQTT ●' : 'MQTT ○'}
+            </span>
+          </div>
+          {/* 버전 뱃지 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+            background: 'rgba(100,116,139,0.15)', border: '1px solid rgba(100,116,139,0.3)',
+            borderRadius: '999px', padding: '0.25rem 0.75rem',
+          }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace' }}>{APP_VERSION}</span>
+          </div>
         </div>
         <h1 style={{ color: 'white', margin: 0, fontSize: '2.2rem', fontWeight: 800 }}>
           🌱 Eco-Pet Care Smart Home IoT Dashboard
