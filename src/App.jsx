@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.5.2';
+const APP_VERSION = 'v1.6.0';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -176,17 +176,24 @@ export default function App() {
         }
       }
 
-      // INA219 실시간 합산 전력(mW) 수신 및 그래프 차트 실시간 갱신
+      // INA219 실시간 합산 전력(mW) 수신 및 완만한 이동평균(Smooth) 차트 갱신
       if (topic.includes('/power')) {
         const pwrVal = parseFloat(payloadStr);
         if (!isNaN(pwrVal) && pwrVal >= 0) {
-          setCurrentPower(pwrVal);
           setPowerHistory(prev => {
+            // 최근 4개 수치의 이동 평균을 구해 노이즈 삐죽임 제거
+            const recentVals = prev.slice(-3).map(item => item.총합산전력);
+            recentVals.push(pwrVal);
+            const avgVal = recentVals.reduce((acc, v) => acc + v, 0) / recentVals.length;
+            const smoothVal = Math.round(avgVal * 100) / 100;
+
+            setCurrentPower(smoothVal);
+
             const time = new Date();
             const m = time.getMinutes();
             const s = time.getSeconds();
             const timeStr = `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
-            const newHistory = [...prev, { name: timeStr, 총합산전력: Math.round(pwrVal * 100) / 100 }];
+            const newHistory = [...prev, { name: timeStr, 총합산전력: smoothVal }];
             if (newHistory.length > 300) newHistory.shift();
             return newHistory;
           });
