@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
-const API_BASE = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname.startsWith('172.20.') || window.location.hostname.startsWith('192.168.'))
-  ? `http://${(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? '172.20.10.2' : window.location.hostname}:5000`
-  : 'https://kenny-striking-cooked-despite.trycloudflare.com';
+const API_BASE = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://127.0.0.1:8000'
+  : '';
 
 export default function App() {
   const [logs, setLogs] = useState([]);
@@ -40,8 +40,8 @@ export default function App() {
   });
 
   const calculateFanSpeed = (temp) => {
-    const minPWM = 1;   // 30°C -> PWM 1 (최소 미풍 유지를 위해 0이 아닌 1로 설정)
-    const maxPWM = 255; // 18°C -> PWM 255 (최대 냉방)
+    const minPWM = 0;   // 30°C -> PWM 0
+    const maxPWM = 255; // 18°C -> PWM 255
     const minTemp = 18;
     const maxTemp = 30;
     const ratio = (temp - minTemp) / (maxTemp - minTemp);
@@ -56,10 +56,28 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/logs`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setLogs(data);
+          return;
+        }
       }
     } catch (e) {
-      console.error("Error fetching logs:", e);
+      console.error("Error fetching logs via API:", e);
+    }
+    // Direct Supabase REST API fallback so logs display 100% reliably
+    try {
+      const res = await fetch("https://jxauevydtcymamfefekc.supabase.co/rest/v1/iot_logs?select=timestamp,device_name,event_type,details&order=id.desc&limit=100", {
+        headers: {
+          "apikey": "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1",
+          "Authorization": "Bearer sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1"
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setLogs(data);
+      }
+    } catch (err) {
+      console.error("Supabase fallback error:", err);
     } finally {
       setLoading(false);
     }
