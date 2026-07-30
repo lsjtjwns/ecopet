@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
+// 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
+const APP_VERSION = 'v1.1.0';
+
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
 const SUPABASE_KEY = "sb_publishable_4s4bqYB3b4WW4px73RK-FQ_bL26aVw1";
@@ -238,8 +241,25 @@ export default function App() {
         borderRadius: '16px',
         marginBottom: '2rem',
         borderLeft: '8px solid #10b981',
-        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)'
+        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
+        position: 'relative'
       }}>
+        {/* 버전 뱃지 */}
+        <div style={{
+          position: 'absolute',
+          top: '1rem',
+          right: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          background: 'rgba(16, 185, 129, 0.12)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+          borderRadius: '999px',
+          padding: '0.25rem 0.75rem',
+        }}>
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
+          <span style={{ color: '#10b981', fontSize: '0.78rem', fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'monospace' }}>{APP_VERSION}</span>
+        </div>
         <h1 style={{ color: 'white', margin: 0, fontSize: '2.2rem', fontWeight: 800 }}>
           🌱 Eco-Pet Care Smart Home IoT Dashboard
         </h1>
