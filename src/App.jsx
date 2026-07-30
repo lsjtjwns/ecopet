@@ -3,7 +3,7 @@ import mqtt from 'mqtt';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line } from 'recharts';
 
 // 버전: 웹 수정 시마다 올려서 Vercel 배포 반영 여부를 즉시 확인
-const APP_VERSION = 'v1.3.1';
+const APP_VERSION = 'v1.4.0';
 
 // Supabase Direct REST API credentials for 100% reliable logging in any environment
 const SUPABASE_URL = "https://jxauevydtcymamfefekc.supabase.co";
@@ -147,6 +147,7 @@ export default function App() {
       setMqttConnected(true);
       client.subscribe('xiao/+/motion', { qos: 0 });
       client.subscribe('xiao/+/temp', { qos: 0 });
+      client.subscribe('xiao/+/power', { qos: 0 });
     });
 
     client.on('disconnect', () => setMqttConnected(false));
@@ -172,6 +173,23 @@ export default function App() {
         const tVal = parseFloat(payloadStr);
         if (!isNaN(tVal) && tVal > -50 && tVal < 100) {
           setCurrentTemp(tVal);
+        }
+      }
+
+      // INA219 실시간 합산 전력(mW) 수신 및 그래프 차트 실시간 갱신
+      if (topic.includes('/power')) {
+        const pwrVal = parseFloat(payloadStr);
+        if (!isNaN(pwrVal) && pwrVal >= 0) {
+          setCurrentPower(pwrVal);
+          setPowerHistory(prev => {
+            const time = new Date();
+            const m = time.getMinutes();
+            const s = time.getSeconds();
+            const timeStr = `${m < 10 ? '0' + m : m}:${s < 10 ? '0' + s : s}`;
+            const newHistory = [...prev, { name: timeStr, 총합산전력: Math.round(pwrVal * 100) / 100 }];
+            if (newHistory.length > 300) newHistory.shift();
+            return newHistory;
+          });
         }
       }
     });
